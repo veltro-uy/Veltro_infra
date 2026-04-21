@@ -209,6 +209,10 @@ Veltro_infra/
 | Grafana | admin | Gr4f4n4_V3ltr0_2025! |
 | Backup SSH | root | B4ckupR00t_V3ltr0_2025! |
 | File Server | mlopez | Admin_V3ltr0_2025! |
+| File Server | fmartinez | Dev_V3ltr0_2025! |
+| File Server | ngalego | Dev_V3ltr0_2025! |
+| File Server | mlandaco | Dev_V3ltr0_2025! |
+| File Server | pfumero | Test_V3ltr0_2025! |
 
 ---
 
