@@ -1,0 +1,319 @@
+version: '3.8'
+
+services:
+  # ==================== DMZ - SERVIDORES ====================
+
+  # WAF - ModSecurity + OWASP Core Rule Set
+  waf:
+    image: owasp/modsecurity-crs:nginx-alpine
+    container_name: veltrowaf
+    hostname: veltrowaf
+    networks:
+      dmz_network:
+        ipv4_address: 192.168.20.5
+    ports:
+      - "8088:8080"
+      - "4438:443"
+    volumes:
+      - ./config/waf/default.conf.template:/etc/nginx/templates/default.conf.template:ro
+      - ./logs/waf:/var/log/nginx
+    environment:
+      TZ: America/Montevideo
+      BACKEND: http://192.168.20.10:80
+      PROXY: 1
+      MODSEC_RULE_ENGINE: On
+      PARANOIA: 2
+      ANOMALY_INBOUND: 5
+      ANOMALY_OUTBOUND: 4
+    depends_on:
+      - svveltroweb
+    restart: unless-stopped
+
+  # Servidor Web - Apache + PHP 8.4
+  svveltroweb:
+    build:
+      context: ./build/web
+      dockerfile: Dockerfile
+    container_name: svveltroweb
+    hostname: svveltroweb
+    networks:
+      dmz_network:
+        ipv4_address: 192.168.20.10
+    ports:
+      - "8081:80"
+    expose:
+      - "80"
+      - "443"
+    volumes:
+      - ./data/web:/var/www/html
+      - ./config/apache/veltro.conf:/etc/apache2/sites-available/000-default.conf:ro
+      - ./logs/web:/var/log/apache2
+    environment:
+      TZ: America/Montevideo
+      APACHE_RUN_USER: www-data
+      APACHE_RUN_GROUP: www-data
+    restart: unless-stopped
+
+  # Base de Datos Master - MySQL 8.0 (Escritura)
+  svveltrobdm:
+    image: mysql:8.0
+    container_name: svveltrobdm
+    hostname: svveltrobdm
+    networks:
+      dmz_network:
+        ipv4_address: 192.168.20.20
+    ports:
+      - "3316:3306"
+    environment:
+      TZ: America/Montevideo
+      MYSQL_ROOT_PASSWORD: MasterDB_V3ltr0_2025!
+      MYSQL_DATABASE: veltro_prod
+      MYSQL_USER: veltro_app
+      MYSQL_PASSWORD: V3ltr0App_2025!
+    volumes:
+      - ./data/db-master:/var/lib/mysql
+      - ./config/db-master/init-master.sql:/docker-entrypoint-initdb.d/01_init.sql:ro
+      - ./config/db-master/master.cnf:/etc/mysql/conf.d/master.cnf:ro
+      - ./logs/db-master:/var/log/mysql
+    command: >
+      --server-id=1
+      --log-bin=mysql-bin
+      --binlog-format=ROW
+      --gtid-mode=ON
+      --enforce-gtid-consistency=ON
+      --default-time-zone='-03:00'
+      --max_connections=500
+      --default_authentication_plugin=mysql_native_password
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-uroot", "-pMasterDB_V3ltr0_2025!"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+
+  # Base de Datos Slave - MySQL 8.0 (Lectura)
+  svveltrobds:
+    image: mysql:8.0
+    container_name: svveltrobds
+    hostname: svveltrobds
+    networks:
+      dmz_network:
+        ipv4_address: 192.168.20.40
+    ports:
+      - "3307:3306"
+    environment:
+      TZ: America/Montevideo
+      MYSQL_ROOT_PASSWORD: SlaveDB_V3ltr0_2025!
+      MYSQL_DATABASE: veltro_prod
+      MYSQL_USER: veltro_app
+      MYSQL_PASSWORD: V3ltr0App_2025!
+      MYSQL_REPLICATION_PASSWORD: Replicator_V3ltr0_2025!
+    volumes:
+      - ./data/db-slave:/var/lib/mysql
+      - ./scripts/init/setup_replication_on_slave.sh:/docker-entrypoint-initdb.d/01_setup_replication.sh:ro
+      - ./logs/db-slave:/var/log/mysql
+    command: >
+      --server-id=2
+      --relay-log=mysql-relay-bin
+      --gtid-mode=ON
+      --enforce-gtid-consistency=ON
+      --default-time-zone='-03:00'
+      --default_authentication_plugin=mysql_native_password
+    depends_on:
+      svveltrobdm:
+        condition: service_healthy
+    restart: unless-stopped
+    # Healthcheck más permisivo para dar tiempo a que se configure la replicación
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-uroot", "-pSlaveDB_V3ltr0_2025!"]
+      interval: 30s
+      timeout: 10s
+      retries: 10
+      start_period: 90s
+
+  # SQL Proxy - HAProxy Load Balancer
+  sqlproxy:
+    image: haproxy:2.8-alpine
+    container_name: sqlproxy
+    hostname: sqlproxy
+    networks:
+      dmz_network:
+        ipv4_address: 192.168.20.25
+    ports:
+      - "6033:6033"
+      - "6032:6032"
+      - "8404:8404"
+    volumes:
+      - ./config/haproxy/haproxy.cfg:/usr/local/etc/haproxy/haproxy.cfg:ro
+      - ./logs/haproxy:/var/log/haproxy
+    depends_on:
+      svveltrobdm:
+        condition: service_healthy
+      svveltrobds:
+        condition: service_started  # Cambiado de healthy a started
+    restart: unless-stopped
+
+   # Servidor de Backup
+  svveltrobackup:
+    image: fedora:42
+    container_name: svveltrobackup
+    hostname: svveltrobackup
+    networks:
+      dmz_network:
+        ipv4_address: 192.168.20.30
+    ports:
+      - "2022:22"
+      - "9100:9100"
+    volumes:
+      - ./data/backup:/backup
+      - ./scripts/backup:/scripts:ro
+      - ./logs/backup:/var/log/backup
+    environment:
+      TZ: America/Montevideo
+      MYSQL_MASTER_HOST: 192.168.20.20
+      MYSQL_MASTER_PASS: B4ckup_V3ltr0_2025!
+    command: |
+      bash -c "
+        /scripts/setup_backup_server.sh &
+        sleep 45
+        /scripts/setup_ssh_to_fileserver.sh
+        wait
+      "
+    restart: unless-stopped
+
+  # Prometheus
+  prometheus:
+    image: prom/prometheus:latest
+    container_name: svveltromonit
+    hostname: svveltromonit
+    networks:
+      dmz_network:
+        ipv4_address: 192.168.20.50
+    ports:
+      - "9090:9090"
+    volumes:
+      - ./config/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - ./data/prometheus:/prometheus
+    command:
+      - '--config.file=/etc/prometheus/prometheus.yml'
+      - '--storage.tsdb.path=/prometheus'
+      - '--storage.tsdb.retention.time=30d'
+    restart: unless-stopped
+
+  # Grafana
+  grafana:
+    image: grafana/grafana:latest
+    container_name: grafana
+    hostname: grafana
+    networks:
+      dmz_network:
+        ipv4_address: 192.168.20.51
+    ports:
+      - "3000:3000"
+    environment:
+      GF_SECURITY_ADMIN_USER: admin
+      GF_SECURITY_ADMIN_PASSWORD: Gr4f4n4_V3ltr0_2025!
+      GF_USERS_ALLOW_SIGN_UP: false
+    volumes:
+      - ./data/grafana:/var/lib/grafana
+      - ./config/grafana/provisioning:/etc/grafana/provisioning:ro
+    depends_on:
+      - prometheus
+    restart: unless-stopped
+
+            # MySQL Exporter Master
+  mysql-exporter-master:
+    image: prom/mysqld-exporter:v0.12.1
+    container_name: mysql-exporter-master
+    networks:
+      dmz_network:
+        ipv4_address: 192.168.20.52
+    ports:
+      - "9104:9104"
+    environment:
+      - DATA_SOURCE_NAME=exporter:Exp0rt3r_2025!@tcp(svveltrobdm:3306)/
+    depends_on:
+      svveltrobdm:
+        condition: service_healthy
+    restart: unless-stopped
+
+  # MySQL Exporter Slave
+  mysql-exporter-slave:
+    image: prom/mysqld-exporter:v0.12.1
+    container_name: mysql-exporter-slave
+    networks:
+      dmz_network:
+        ipv4_address: 192.168.20.53
+    ports:
+      - "9105:9104"
+    environment:
+      - DATA_SOURCE_NAME=exporter:Exp0rt3r_2025!@tcp(svveltrobds:3306)/
+    depends_on:
+      svveltrobds:
+        condition: service_healthy
+    restart: unless-stopped
+    
+      # File Server
+  fileserver:
+    image: fedora:42
+    container_name: fileserver
+    hostname: fileserver
+    networks:
+      lan_network:
+        ipv4_address: 192.168.0.100
+      vlan_devs_dba:
+        ipv4_address: 192.168.10.100
+      vlan_admin:
+        ipv4_address: 192.168.30.100
+      vlan_tester:
+        ipv4_address: 192.168.40.100
+    ports:
+      - "2222:22"
+    volumes:
+      - ./data/fileserver:/srv/shared
+      - ./logs/fileserver:/var/log
+      - ./scripts/init/setup_fileserver.sh:/setup_fileserver.sh:ro
+      - ./config/fileserver/ssh:/root/.ssh:ro
+    environment:
+      TZ: America/Montevideo
+    command: /setup_fileserver.sh
+    restart: unless-stopped
+
+# ==================== REDES ====================
+networks:
+  dmz_network:
+    name: dmz_network
+    driver: bridge
+    ipam:
+      config:
+        - subnet: 192.168.20.0/24
+          gateway: 192.168.20.1
+  lan_network:
+    name: lan_network
+    driver: bridge
+    ipam:
+      config:
+        - subnet: 192.168.0.0/24
+          gateway: 192.168.0.254
+  vlan_devs_dba:
+    name: vlan_devs_dba
+    driver: bridge
+    ipam:
+      config:
+        - subnet: 192.168.10.0/24
+          gateway: 192.168.10.1
+  vlan_admin:
+    name: vlan_admin
+    driver: bridge
+    ipam:
+      config:
+        - subnet: 192.168.30.0/24
+          gateway: 192.168.30.1
+  vlan_tester:
+    name: vlan_tester
+    driver: bridge
+    ipam:
+      config:
+        - subnet: 192.168.40.0/24
+          gateway: 192.168.40.1
