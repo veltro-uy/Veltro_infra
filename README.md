@@ -130,7 +130,7 @@ docker exec svveltrobds mysql -uroot -pSlaveDB_V3ltr0_2025! -e "SELECT COUNT(*) 
 | Prometheus            | svveltromonit         | 9090        | http://localhost:9090        |
 | Grafana               | grafana               | 3000        | admin / Gr4f4n4_V3ltr0_2025! |
 | Backup Server (SSH)   | svveltrobackup        | 2022        | root / B4ckupR00t_V3ltr0_2025!|
-| File Server (SSH)     | fileserver            | 2222        | mlopez                       |
+| File Server (SSH)     | fileserver            | 2222        | mlopez / Admin_V3ltr0_2025!  |
 | MySQL Exporter Master | mysql-exporter-master | 9104        | -                            |
 | MySQL Exporter Slave  | mysql-exporter-slave  | 9105        | -                            |
 
