@@ -171,15 +171,7 @@ services:
       - ./logs/backup:/var/log/backup
     environment:
       TZ: America/Montevideo
-      MYSQL_MASTER_HOST: 192.168.20.20
-      MYSQL_MASTER_PASS: B4ckup_V3ltr0_2025!
-    command: |
-      bash -c "
-        /scripts/setup_backup_server.sh &
-        sleep 45
-        /scripts/setup_ssh_to_fileserver.sh
-        wait
-      "
+    command: /scripts/setup_backup_server.sh
     restart: unless-stopped
 
   # Prometheus

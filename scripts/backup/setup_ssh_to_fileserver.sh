@@ -14,17 +14,23 @@ log "=========================================="
 log "  Configurando acceso SSH al File Server"
 log "=========================================="
 
+# Variables
+FILESERVER_IP="192.168.0.100"
+FILESERVER_USER="mlopez"
+FILESERVER_PASS="Admin_V3ltr0_2025!"
+
 # Esperar a que el File Server esté disponible
-FILESERVER_LAN_IP="192.168.0.100"
-log "Esperando a que el File Server ($FILESERVER_LAN_IP) esté disponible..."
-while ! nc -z $FILESERVER_LAN_IP 22 2>/dev/null; do
+log "Esperando a que el File Server ($FILESERVER_IP) esté disponible..."
+while ! nc -z $FILESERVER_IP 22 2>/dev/null; do
     sleep 2
 done
+sleep 10  # Esperar adicional para que SSH esté listo
 log "✓ File Server disponible"
 
 # Copiar clave pública al File Server
 log "Copiando clave SSH al File Server..."
-sshpass -p "Admin_V3ltr0_2025!" ssh-copy-id -o StrictHostKeyChecking=no -i /root/.ssh/id_rsa.pub mlopez@$FILESERVER_LAN_IP 2>/dev/null
+PUB_KEY=$(cat /root/.ssh/id_rsa.pub)
+ssh -p 22 $FILESERVER_USER@$FILESERVER_IP "mkdir -p /home/$FILESERVER_USER/.ssh && chmod 700 /home/$FILESERVER_USER/.ssh && echo '$PUB_KEY' >> /home/$FILESERVER_USER/.ssh/authorized_keys && chmod 600 /home/$FILESERVER_USER/.ssh/authorized_keys && chown -R $FILESERVER_USER:$FILESERVER_USER /home/$FILESERVER_USER/.ssh" 2>/dev/null
 
 # Probar conexión
 log "Probando conexión SSH al File Server..."
