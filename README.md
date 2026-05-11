@@ -97,7 +97,7 @@ docker-compose logs -f
 ⏱️ La primera vez puede tomar 2-3 minutos.
 
 ```powershell
-Start-Sleep -Seconds 90
+Start-Sleep -Seconds 120
 ```
 
 ### 6. Verificar funcionamiento
@@ -210,7 +210,7 @@ docker-compose build --no-cache
 docker-compose up -d
 
 # 6. Esperar inicialización
-Start-Sleep -Seconds 90
+Start-Sleep -Seconds 120
 
 # 7. Verificar
 docker-compose ps
@@ -297,6 +297,31 @@ Veltro_infra/
 
 ---
 
+# ⚠️ CONFIGURACIÓN MANUAL (SOLO SI ES NECESARIO)
+
+## 1. Si los dashboards de Grafana no aparecen
+
+```bash
+docker cp scripts/init/grafana-dashboards.sh grafana:/tmp/
+docker exec grafana chmod +x /tmp/grafana-dashboards.sh
+docker exec grafana bash /tmp/grafana-dashboards.sh
+```
+
+---
+
+## 2. Si las métricas de backup no aparecen
+
+```bash
+# Ejecutar script de métricas
+docker exec svveltrobackup /usr/local/bin/backup_metrics.sh
+
+# Verificar
+docker exec svveltrobackup cat /var/lib/node_exporter/textfile/backup.prom
+```
+
+---
+
+
 ## 🔐 Credenciales
 
 | Servicio            | Usuario    | Contraseña              |
@@ -325,6 +350,7 @@ Veltro_infra/
 * ✅ Datos de prueba cargados en el Master
 * ✅ Backup Server accede al File Server vía SSH sin contraseña
 * ✅ Si aparece error de SSH, ver sección *known_hosts*
+* ⚠️ Esperar a que todos los contenedores estén `"healthy"` antes de usar
 
 ---
 
