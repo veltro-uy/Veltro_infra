@@ -41,9 +41,6 @@ services:
         ipv4_address: 192.168.20.10
     ports:
       - "8081:80"
-    expose:
-      - "80"
-      - "443"
     volumes:
       - ./data/web:/var/www/html
       - ./config/apache/veltro.conf:/etc/apache2/sites-available/000-default.conf:ro
@@ -169,12 +166,13 @@ services:
       - ./data/backup:/backup
       - ./scripts/backup:/scripts:ro
       - ./logs/backup:/var/log/backup
+      - ./data/node_exporter:/var/lib/node_exporter   # Para persistir métricas
     environment:
       TZ: America/Montevideo
     command: /scripts/setup_backup_server.sh
     restart: unless-stopped
-
-  # Prometheus
+    
+  # Prometheus - Sistema de Monitoreo
   prometheus:
     image: prom/prometheus:latest
     container_name: svveltromonit
@@ -186,6 +184,7 @@ services:
       - "9090:9090"
     volumes:
       - ./config/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - ./config/prometheus/alert.rules.yml:/etc/prometheus/alert.rules.yml:ro
       - ./data/prometheus:/prometheus
     command:
       - '--config.file=/etc/prometheus/prometheus.yml'
@@ -193,7 +192,7 @@ services:
       - '--storage.tsdb.retention.time=30d'
     restart: unless-stopped
 
-  # Grafana
+  # Grafana - Visualización
   grafana:
     image: grafana/grafana:latest
     container_name: grafana
@@ -209,12 +208,13 @@ services:
       GF_USERS_ALLOW_SIGN_UP: false
     volumes:
       - ./data/grafana:/var/lib/grafana
-      - ./config/grafana/provisioning:/etc/grafana/provisioning:ro
+      - ./config/grafana/provisioning:/etc/grafana/provisioning
+      - ./scripts/init/grafana-dashboards.sh:/docker-entrypoint-initdb.d/grafana-dashboards.sh:ro
     depends_on:
       - prometheus
     restart: unless-stopped
-
-            # MySQL Exporter Master
+    
+# MySQL Exporter Master
   mysql-exporter-master:
     image: prom/mysqld-exporter:v0.12.1
     container_name: mysql-exporter-master
@@ -272,6 +272,24 @@ services:
     command: /setup_fileserver.sh
     restart: unless-stopped
 
+
+  # ==================== EXPORTERS ADICIONALES ====================
+
+  # Apache Exporter - Métricas del servidor web
+  apache-exporter:
+    image: lusotycoon/apache-exporter:latest
+    container_name: apache-exporter
+    hostname: apache-exporter
+    networks:
+      dmz_network:
+        ipv4_address: 192.168.20.27
+    ports:
+      - "9117:9117"
+    command:
+      - --scrape_uri=http://svveltroweb/server-status?auto
+    depends_on:
+      - svveltroweb
+    restart: unless-stopped
 # ==================== REDES ====================
 networks:
   dmz_network:

@@ -31,6 +31,10 @@ tar xzf node_exporter-1.7.0.linux-amd64.tar.gz
 cp node_exporter-1.7.0.linux-amd64/node_exporter /usr/local/bin/
 rm -rf node_exporter-1.7.0.linux-amd64*
 
+# Crear directorio para textfile collector
+mkdir -p /var/lib/node_exporter/textfile
+chmod 755 /var/lib/node_exporter/textfile
+
 # ==============================================
 # 3. CONFIGURAR SSH SERVER
 # ==============================================
@@ -39,13 +43,21 @@ ssh-keygen -A
 mkdir -p /var/run/sshd
 mkdir -p /root/.ssh
 chmod 700 /root/.ssh
+touch /root/.ssh/authorized_keys
+chmod 600 /root/.ssh/authorized_keys
 
 cat > /etc/ssh/sshd_config <<'EOF'
 Port 22
 PermitRootLogin yes
 PubkeyAuthentication yes
+AuthorizedKeysFile .ssh/authorized_keys
 PasswordAuthentication yes
+PermitEmptyPasswords no
+ChallengeResponseAuthentication no
 UsePAM no
+X11Forwarding no
+PrintMotd no
+AcceptEnv LANG LC_*
 Subsystem sftp /usr/libexec/openssh/sftp-server
 EOF
 
@@ -120,16 +132,72 @@ crontab -r 2>/dev/null || true
 (crontab -l 2>/dev/null; echo '0 5 * * * /bin/bash /scripts/check_backup_integrity.sh >> /var/log/backup/check_$(date +\%Y\%m\%d_\%H\%M\%S).log 2>&1') | crontab -
 
 # ==============================================
-# 8. INICIAR SERVICIOS
+# 8. CREAR SCRIPTS DE MÉTRICAS DE BACKUP
+# ==============================================
+log "Creando script de métricas de backup..."
+
+cat > /usr/local/bin/backup_metrics.sh << 'METRICSSCRIPT'
+#!/bin/bash
+BACKUP_DIR="/backup"
+METRICS_DIR="/var/lib/node_exporter/textfile"
+METRICS_FILE="$METRICS_DIR/backup.prom"
+
+mkdir -p $METRICS_DIR
+
+MYSQL_BACKUP_SIZE=$(find $BACKUP_DIR/database/full -name "*.sql.gz" -type f 2>/dev/null -exec du -sb {} \; | awk '{sum+=$1} END {print sum}')
+FS_BACKUP_SIZE=$(find $BACKUP_DIR/fileserver/full -name "*.tar.gz" -type f 2>/dev/null -exec du -sb {} \; | awk '{sum+=$1} END {print sum}')
+LAST_BACKUP=$(find $BACKUP_DIR/database/full -name "*.sql.gz" -type f 2>/dev/null -printf "%T@\n" | sort -n | tail -1)
+BACKUP_COUNT=$(find $BACKUP_DIR -name "*.sql.gz" -type f 2>/dev/null | wc -l)
+
+MYSQL_BACKUP_SIZE=${MYSQL_BACKUP_SIZE:-0}
+FS_BACKUP_SIZE=${FS_BACKUP_SIZE:-0}
+LAST_BACKUP=${LAST_BACKUP:-0}
+BACKUP_COUNT=${BACKUP_COUNT:-0}
+
+cat > $METRICS_FILE << EOM
+# HELP backup_mysql_size_bytes Tamaño total de backups MySQL
+# TYPE backup_mysql_size_bytes gauge
+backup_mysql_size_bytes $MYSQL_BACKUP_SIZE
+
+# HELP backup_fileserver_size_bytes Tamaño total de backups Fileserver
+# TYPE backup_fileserver_size_bytes gauge
+backup_fileserver_size_bytes $FS_BACKUP_SIZE
+
+# HELP backup_last_timestamp_seconds Timestamp del último backup exitoso
+# TYPE backup_last_timestamp_seconds gauge
+backup_last_timestamp_seconds $LAST_BACKUP
+
+# HELP backup_total_count Número total de backups realizados
+# TYPE backup_total_count counter
+backup_total_count $BACKUP_COUNT
+
+# HELP backup_scrape_timestamp_seconds Momento de la última actualización
+# TYPE backup_scrape_timestamp_seconds gauge
+backup_scrape_timestamp_seconds $(date +%s)
+EOM
+
+echo "Métricas actualizadas: MySQL=${MYSQL_BACKUP_SIZE} bytes, FS=${FS_BACKUP_SIZE} bytes"
+METRICSSCRIPT
+
+chmod +x /usr/local/bin/backup_metrics.sh
+log "✓ Script de métricas creado"
+
+# 8. Ejecutar métricas iniciales
+log "Ejecutando métricas iniciales..."
+/usr/local/bin/backup_metrics.sh
+log "✓ Métricas iniciales generadas"
+
+# ==============================================
+# 9. INICIAR SERVICIOS (incluyendo métricas)
 # ==============================================
 log "Iniciando servicios..."
 /usr/sbin/sshd
-/usr/local/bin/node_exporter --web.listen-address=:9100 &
+/usr/local/bin/node_exporter --web.listen-address=:9100 --collector.textfile.directory=/var/lib/node_exporter/textfile &
 
 log "✓ Servicios iniciados"
 
 # ==============================================
-# 9. MANTENER EL CONTENEDOR VIVO
+# 10. MANTENER EL CONTENEDOR VIVO
 # ==============================================
 log "Backup Server listo. Manteniendo servicios activos..."
 while true; do
@@ -139,7 +207,7 @@ while true; do
     fi
     if ! pgrep -x node_exporter > /dev/null; then
         log "Node Exporter caído, reiniciando..."
-        /usr/local/bin/node_exporter --web.listen-address=:9100 &
+        /usr/local/bin/node_exporter --web.listen-address=:9100 --collector.textfile.directory=/var/lib/node_exporter/textfile &
     fi
     sleep 30
 done

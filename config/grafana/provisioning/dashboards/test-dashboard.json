@@ -1,0 +1,18 @@
+﻿{
+  "dashboard": {
+    "title": "Test Dashboard",
+    "panels": [
+      {
+        "title": "MySQL Up",
+        "type": "stat",
+        "gridPos": {"h": 4, "w": 6, "x": 0, "y": 0},
+        "targets": [
+          {"expr": "mysql_up", "legendFormat": "MySQL Status"}
+        ]
+      }
+    ],
+    "timezone": "browser",
+    "schemaVersion": 27
+  },
+  "overwrite": true
+}

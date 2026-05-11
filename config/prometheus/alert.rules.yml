@@ -1,0 +1,51 @@
+groups:
+  - name: mysql_alerts
+    interval: 30s
+    rules:
+      - alert: MySQLDown
+        expr: mysql_up == 0
+        for: 1m
+        labels:
+          severity: critical
+        annotations:
+          summary: "MySQL instance {{ $labels.instance }} is down"
+          description: "MySQL caído por más de 1 minuto"
+
+      - alert: MySQLReplicationNotRunning
+        expr: mysql_slave_status_slave_io_running == 0 or mysql_slave_status_slave_sql_running == 0
+        for: 1m
+        labels:
+          severity: critical
+        annotations:
+          summary: "MySQL replication is not running"
+          description: "Replication IO or SQL thread está parado"
+
+      - alert: MySQLReplicationLag
+        expr: mysql_slave_status_seconds_behind_master > 10
+        for: 1m
+        labels:
+          severity: warning
+        annotations:
+          summary: "MySQL replication lag is high"
+          description: "Replication lag es de {{ $value }} segundos"
+
+  - name: backup_alerts
+    interval: 5m
+    rules:
+      - alert: BackupNotPerformed
+        expr: (time() - backup_last_timestamp_seconds) > 86400
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Backup not performed in last 24 hours"
+          description: "No hubo un backup correcto en 24hs"
+
+      - alert: BackupSizeTooSmall
+        expr: backup_mysql_size_bytes < 100000
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Backup size is suspiciously small"
+          description: "MySQL backup tiene un tamaño de {{ $value }} bytes"

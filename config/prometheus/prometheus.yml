@@ -1,42 +1,27 @@
-global:
+﻿global:
   scrape_interval: 30s
   evaluation_interval: 30s
-  scrape_timeout: 25s
+
+rule_files:
+  - "alert.rules.yml"
 
 scrape_configs:
-  # Auto-monitoreo de Prometheus
-  - job_name: 'prometheus'
+  - job_name: prometheus
     static_configs:
-      - targets: ['localhost:9090']
-        labels:
-          service: 'monitoring'
+      - targets: ["localhost:9090"]
 
-  # MySQL Master
-  - job_name: 'mysql-master'
+  - job_name: mysql-master
     static_configs:
-      - targets: ['192.168.20.52:9104']
-        labels:
-          instance: 'svveltrobdm'
-          alias: 'mysql-master'
-          role: 'database'
-          replication_role: 'master'
+      - targets: ["mysql-exporter-master:9104"]
 
-  # MySQL Slave
-  - job_name: 'mysql-slave'
+  - job_name: mysql-slave
     static_configs:
-      - targets: ['192.168.20.53:9104']
-        labels:
-          instance: 'svveltrobds'
-          alias: 'mysql-slave'
-          role: 'database'
-          replication_role: 'slave'
+      - targets: ["mysql-exporter-slave:9104"]
 
-  # Backup Server Node Exporter
-  - job_name: 'node-backup'
+  - job_name: apache
     static_configs:
-      - targets: ['192.168.20.30:9100']
-        labels:
-          instance: 'svveltrobackup'
-          service: 'backup'
-          role: 'backup-server'
-    scrape_interval: 30s
+      - targets: ["apache-exporter:9117"]
+
+  - job_name: node-backup
+    static_configs:
+      - targets: ["svveltrobackup:9100"]
