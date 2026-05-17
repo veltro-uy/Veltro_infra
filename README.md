@@ -297,9 +297,10 @@ Veltro_infra/
 
 ---
 
-# ⚠️ CONFIGURACIÓN MANUAL (SOLO SI ES NECESARIO)
+# 📊 DASHBOARDS DE GRAFANA
+## ⚠️ IMPORTANTE: Los dashboards NO se crean automáticamente
 
-## 1. Si los dashboards de Grafana no aparecen
+### 1. Ejecutar script de dashboards (OBLIGATORIO)
 
 ```bash
 docker cp scripts/init/grafana-dashboards.sh grafana:/tmp/
@@ -309,7 +310,7 @@ docker exec grafana bash /tmp/grafana-dashboards.sh
 
 ---
 
-## 2. Si las métricas de backup no aparecen
+### 2. Si las métricas de backup no aparecen (OPCIONAL)
 
 ```bash
 # Ejecutar script de métricas

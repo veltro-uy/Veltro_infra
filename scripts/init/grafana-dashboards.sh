@@ -1,7 +1,7 @@
 #!/bin/bash
 ################################################################################
 # VELTRO - Dashboards para Grafana
-# Dashboards: MySQL, Sistema, Apache y Backups
+# Dashboards: MySQL, Sistema, Apache, Backups y Alertas
 ################################################################################
 
 echo "=== VELTRO - Configurando Dashboards ==="
@@ -21,7 +21,7 @@ echo "✓ Grafana disponible"
 # DASHBOARD 1: MySQL
 # ==============================================
 echo ""
-echo "[1/4] Creando Dashboard MySQL..."
+echo "[1/5] Creando Dashboard MySQL..."
 
 curl -s -X POST "http://localhost:3000/api/dashboards/db" \
     -H "Content-Type: application/json" \
@@ -94,7 +94,7 @@ echo "✓ Dashboard MySQL creado"
 # DASHBOARD 2: Sistema
 # ==============================================
 echo ""
-echo "[2/4] Creando Dashboard Sistema..."
+echo "[2/5] Creando Dashboard Sistema..."
 
 curl -s -X POST "http://localhost:3000/api/dashboards/db" \
     -H "Content-Type: application/json" \
@@ -165,7 +165,7 @@ echo "✓ Dashboard Sistema creado"
 # DASHBOARD 3: Apache
 # ==============================================
 echo ""
-echo "[3/4] Creando Dashboard Apache..."
+echo "[3/5] Creando Dashboard Apache..."
 
 curl -s -X POST "http://localhost:3000/api/dashboards/db" \
     -H "Content-Type: application/json" \
@@ -241,7 +241,7 @@ echo "✓ Dashboard Apache creado"
 # DASHBOARD 4: Backups
 # ==============================================
 echo ""
-echo "[4/4] Creando Dashboard Backups..."
+echo "[4/5] Creando Dashboard Backups..."
 
 curl -s -X POST "http://localhost:3000/api/dashboards/db" \
     -H "Content-Type: application/json" \
@@ -302,11 +302,113 @@ curl -s -X POST "http://localhost:3000/api/dashboards/db" \
 
 echo "✓ Dashboard Backups creado"
 
+# ==============================================
+# DASHBOARD 5: Alertas
+# ==============================================
+echo ""
+echo "[5/5] Creando Dashboard Alertas..."
+
+curl -s -X POST "http://localhost:3000/api/dashboards/db" \
+    -H "Content-Type: application/json" \
+    -u $GRAFANA_USER:$GRAFANA_PASS \
+    -d '{
+  "dashboard": {
+    "title": "VELTRO - Alertas",
+    "description": "Monitor de alertas de Prometheus",
+    "tags": ["alerts", "veltro", "monitoring"],
+    "timezone": "browser",
+    "schemaVersion": 36,
+    "refresh": "30s",
+    "panels": [
+      {
+        "title": "Alertas Activas",
+        "type": "stat",
+        "gridPos": {"h": 4, "w": 4, "x": 0, "y": 0},
+        "targets": [{"expr": "count(ALERTS{alertstate=\"firing\"})", "refId": "A"}],
+        "fieldConfig": {
+          "defaults": {
+            "thresholds": {"steps": [{"color": "green", "value": null}, {"color": "red", "value": 1}]}
+          }
+        }
+      },
+      {
+        "title": "Alertas Críticas",
+        "type": "stat",
+        "gridPos": {"h": 4, "w": 4, "x": 4, "y": 0},
+        "targets": [{"expr": "count(ALERTS{alertstate=\"firing\", severity=\"critical\"})", "refId": "A"}],
+        "fieldConfig": {
+          "defaults": {
+            "thresholds": {"steps": [{"color": "green", "value": null}, {"color": "red", "value": 1}]}
+          }
+        }
+      },
+      {
+        "title": "Alertas de Advertencia",
+        "type": "stat",
+        "gridPos": {"h": 4, "w": 4, "x": 8, "y": 0},
+        "targets": [{"expr": "count(ALERTS{alertstate=\"firing\", severity=\"warning\"})", "refId": "A"}],
+        "fieldConfig": {
+          "defaults": {
+            "thresholds": {"steps": [{"color": "green", "value": null}, {"color": "orange", "value": 1}]}
+          }
+        }
+      },
+      {
+        "title": "Alertas Silenciadas",
+        "type": "stat",
+        "gridPos": {"h": 4, "w": 4, "x": 12, "y": 0},
+        "targets": [{"expr": "count(ALERTS{alertstate=\"pending\"})", "refId": "A"}]
+      },
+      {
+        "title": "Alertas Activas - Lista",
+        "type": "table",
+        "gridPos": {"h": 10, "w": 12, "x": 0, "y": 8},
+        "targets": [{"expr": "ALERTS{alertstate=\"firing\"}", "format": "table", "instant": true, "refId": "A"}],
+        "transformations": [
+          {
+            "id": "organize",
+            "options": {
+              "excludeByName": {"alertstate": true, "value": true},
+              "renameByName": {
+                "alertname": "Alerta",
+                "severity": "Severidad",
+                "instance": "Instancia",
+                "job": "Job"
+              }
+            }
+          }
+        ]
+      },
+      {
+        "title": "Historial de Alertas",
+        "type": "timeseries",
+        "gridPos": {"h": 10, "w": 12, "x": 12, "y": 8},
+        "targets": [{"expr": "ALERTS{alertstate=\"firing\"}", "legendFormat": "{{alertname}}", "refId": "A"}]
+      },
+      {
+        "title": "Alertas por Severidad",
+        "type": "piechart",
+        "gridPos": {"h": 8, "w": 12, "x": 0, "y": 18},
+        "targets": [{"expr": "count(ALERTS{alertstate=\"firing\"}) by (severity)", "format": "table", "instant": true, "refId": "A"}],
+        "options": {
+          "displayLabels": ["name", "percent"],
+          "legend": {"displayMode": "list", "placement": "right"},
+          "pieType": "pie"
+        }
+      }
+    ]
+  },
+  "overwrite": true
+}' > /dev/null
+
+echo "✓ Dashboard Alertas creado"
+
 echo ""
 echo "=== DASHBOARDS CONFIGURADOS ==="
 echo "- VELTRO - MySQL"
 echo "- VELTRO - System"
 echo "- VELTRO - Apache"
 echo "- VELTRO - Backups"
+echo "- VELTRO - Alertas"
 echo ""
 echo "📊 Acceso: http://localhost:3000 (admin / Gr4f4n4_V3ltr0_2025!)"
