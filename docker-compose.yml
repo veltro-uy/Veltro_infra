@@ -12,7 +12,7 @@ services:
       dmz_network:
         ipv4_address: 192.168.20.5
     ports:
-      - "8088:8080"
+      - "8188:8080"
       - "4438:443"
     volumes:
       - ./config/waf/default.conf.template:/etc/nginx/templates/default.conf.template:ro
@@ -40,7 +40,7 @@ services:
       dmz_network:
         ipv4_address: 192.168.20.10
     ports:
-      - "8081:80"
+      - "8181:80"
     volumes:
       - ./data/web:/var/www/html
       - ./config/apache/veltro.conf:/etc/apache2/sites-available/000-default.conf:ro
@@ -246,7 +246,7 @@ services:
         condition: service_healthy
     restart: unless-stopped
     
-      # File Server
+# File Server
   fileserver:
     image: fedora:42
     container_name: fileserver
@@ -261,12 +261,13 @@ services:
       vlan_tester:
         ipv4_address: 192.168.40.100
     ports:
-      - "2222:22"
+      - "2322:22"
+      - "1445:445"          # Puerto Samba
+      - "1139:139"          # NetBIOS
     volumes:
       - ./data/fileserver:/srv/shared
       - ./logs/fileserver:/var/log
       - ./scripts/init/setup_fileserver.sh:/setup_fileserver.sh:ro
-      - ./config/fileserver/ssh:/root/.ssh:ro
     environment:
       TZ: America/Montevideo
     command: /setup_fileserver.sh

@@ -1,6 +1,6 @@
 #!/bin/bash
 ################################################################################
-# VELTRO - Configuración del File Server
+# VELTRO - Configuración del File Server con Samba
 ################################################################################
 
 set -e
@@ -15,7 +15,7 @@ log() {
 
 # 1. Instalar paquetes
 log "Instalando paquetes..."
-dnf install -y openssh-server sudo rsync telnet nc procps-ng net-tools
+dnf install -y openssh-server sudo acl rsync telnet nc procps-ng net-tools samba samba-client
 
 # 2. Configurar SSH
 log "Configurando SSH..."
@@ -27,7 +27,7 @@ Port 22
 PermitRootLogin no
 PubkeyAuthentication yes
 AuthorizedKeysFile .ssh/authorized_keys
-PasswordAuthentication yes
+PasswordAuthentication no
 PermitEmptyPasswords no
 ChallengeResponseAuthentication no
 UsePAM no
@@ -41,118 +41,129 @@ log "Creando grupos..."
 groupadd admins 2>/dev/null || true
 groupadd developers 2>/dev/null || true
 groupadd testers 2>/dev/null || true
+groupadd sambashare 2>/dev/null || true
 
 # 4. Crear usuarios
 log "Creando usuarios..."
 
-# Usuario Administrador
-if ! id mlopez &>/dev/null; then
-    useradd -m -G wheel,admins mlopez
-fi
-echo 'mlopez:Admin_V3ltr0_2025!' | chpasswd
-log "✓ Usuario mlopez (Administrador) creado"
-
-# Usuario Desarrollador 1
-if ! id fmartinez &>/dev/null; then
-    useradd -m -G developers fmartinez
-fi
-echo 'fmartinez:Dev_V3ltr0_2025!' | chpasswd
-log "✓ Usuario fmartinez (Desarrollador) creado"
-
-# Usuario Desarrollador 2
-if ! id ngalego &>/dev/null; then
-    useradd -m -G developers ngalego
-fi
-echo 'ngalego:Dev_V3ltr0_2025!' | chpasswd
-log "✓ Usuario ngalego (Desarrollador) creado"
-
-# Usuario Desarrollador 3
-if ! id mlandaco &>/dev/null; then
-    useradd -m -G developers mlandaco
-fi
-echo 'mlandaco:Dev_V3ltr0_2025!' | chpasswd
-log "✓ Usuario mlandaco (Desarrollador) creado"
-
-# Usuario Tester
-if ! id pfumero &>/dev/null; then
-    useradd -m -G testers pfumero
-fi
-echo 'pfumero:Test_V3ltr0_2025!' | chpasswd
-log "✓ Usuario pfumero (Tester) creado"
-
-# 5. Crear estructura de directorios
-log "Creando directorios compartidos..."
-mkdir -p /srv/shared/{admin,devs,testers,common,logs,projects}
-
-# 6. CONFIGURAR PERMISOS (sin ACL)
-log "Configurando permisos..."
-
-# Admin - solo mlopez puede escribir
-chown -R mlopez:admins /srv/shared/admin
-chmod 750 /srv/shared/admin
-
-# Devs - desarrolladores pueden escribir, admins pueden leer
-chown -R root:developers /srv/shared/devs
-chmod 750 /srv/shared/devs
-usermod -aG developers mlopez  # mlopez también en developers para lectura
-
-# Testers - testers pueden escribir, admins pueden leer
-chown -R pfumero:testers /srv/shared/testers
-chmod 750 /srv/shared/testers
-usermod -aG testers mlopez  # mlopez también en testers para lectura
-
-# Projects - desarrolladores pueden escribir, admins pueden leer
-chown -R root:developers /srv/shared/projects
-chmod 750 /srv/shared/projects
-
-# Common - todos pueden leer
-chown -R root:root /srv/shared/common
-chmod 755 /srv/shared/common
-
-# Logs - solo admins
-chown -R mlopez:admins /srv/shared/logs
-chmod 750 /srv/shared/logs
-
-log "✓ Permisos configurados"
-
-# 7. Crear archivos de información
-log "Creando archivos de información..."
-echo "Veltro Enterprise File Server" > /srv/shared/common/README.txt
-echo "" >> /srv/shared/common/README.txt
-echo "Usuarios:" >> /srv/shared/common/README.txt
-echo "  - mlopez (Administrador) / Admin_V3ltr0_2025!" >> /srv/shared/common/README.txt
-echo "  - fmartinez (Desarrollador) / Dev_V3ltr0_2025!" >> /srv/shared/common/README.txt
-echo "  - ngalego (Desarrollador) / Dev_V3ltr0_2025!" >> /srv/shared/common/README.txt
-echo "  - mlandaco (Desarrollador) / Dev_V3ltr0_2025!" >> /srv/shared/common/README.txt
-echo "  - pfumero (Tester) / Test_V3ltr0_2025!" >> /srv/shared/common/README.txt
-
-# 8. Crear directorios .ssh y configurar acceso
-log "Configurando directorios .ssh..."
 for user in mlopez fmartinez ngalego mlandaco pfumero; do
-    mkdir -p /home/$user/.ssh
-    chmod 700 /home/$user/.ssh
-    touch /home/$user/.ssh/authorized_keys
-    chmod 600 /home/$user/.ssh/authorized_keys
-    chown -R $user:$user /home/$user/.ssh
+    if ! id $user &>/dev/null; then
+        useradd -m $user
+        log "  Usuario $user creado"
+    fi
 done
 
-# 9. Iniciar SSH
-log "Iniciando SSH..."
+# Asignar grupos
+usermod -aG wheel,admins,sambashare mlopez
+usermod -aG developers,sambashare fmartinez
+usermod -aG developers,sambashare ngalego
+usermod -aG developers,sambashare mlandaco
+usermod -aG testers,sambashare pfumero
+
+# Establecer contraseñas
+echo 'mlopez:Admin_V3ltr0_2025!' | chpasswd
+echo 'fmartinez:Dev_V3ltr0_2025!' | chpasswd
+echo 'ngalego:Dev_V3ltr0_2025!' | chpasswd
+echo 'mlandaco:Dev_V3ltr0_2025!' | chpasswd
+echo 'pfumero:Test_V3ltr0_2025!' | chpasswd
+
+log "✓ Usuarios configurados"
+
+# 5. Directorios
+log "Creando directorios..."
+mkdir -p /srv/shared/{admin,devs,testers,common,logs,projects}
+
+chown -R mlopez:admins /srv/shared/admin
+chown -R root:developers /srv/shared/devs
+chown -R pfumero:testers /srv/shared/testers
+chown -R root:root /srv/shared/common
+chown -R mlopez:admins /srv/shared/logs
+chown -R root:developers /srv/shared/projects
+
+chmod 2770 /srv/shared/admin
+chmod 2770 /srv/shared/devs
+chmod 2770 /srv/shared/testers
+chmod 2775 /srv/shared/common
+chmod 2770 /srv/shared/logs
+chmod 2770 /srv/shared/projects
+
+# 6. Configurar Samba
+log "Configurando Samba..."
+
+cat > /etc/samba/smb.conf <<'EOF'
+[global]
+   workgroup = VELTRO
+   server string = VELTRO File Server
+   netbios name = FILESERVER
+   security = user
+   map to guest = Bad User
+   passdb backend = tdbsam
+
+[admin]
+   path = /srv/shared/admin
+   valid users = @admins
+   admin users = mlopez
+   read only = no
+   browsable = yes
+   create mask = 0660
+   directory mask = 0770
+
+[devs]
+   path = /srv/shared/devs
+   valid users = @developers
+   read only = no
+   browsable = yes
+   create mask = 0660
+   directory mask = 0770
+
+[testers]
+   path = /srv/shared/testers
+   valid users = @testers
+   read only = no
+   browsable = yes
+   create mask = 0660
+   directory mask = 0770
+
+[common]
+   path = /srv/shared/common
+   valid users = @admins,@developers,@testers
+   read only = yes
+   browsable = yes
+
+[projects]
+   path = /srv/shared/projects
+   valid users = @developers,@admins
+   read only = no
+   browsable = yes
+   create mask = 0660
+   directory mask = 0770
+EOF
+
+# Contraseñas Samba
+(echo "Admin_V3ltr0_2025!"; echo "Admin_V3ltr0_2025!") | smbpasswd -a mlopez -s
+(echo "Dev_V3ltr0_2025!"; echo "Dev_V3ltr0_2025!") | smbpasswd -a fmartinez -s
+(echo "Dev_V3ltr0_2025!"; echo "Dev_V3ltr0_2025!") | smbpasswd -a ngalego -s
+(echo "Dev_V3ltr0_2025!"; echo "Dev_V3ltr0_2025!") | smbpasswd -a mlandaco -s
+(echo "Test_V3ltr0_2025!"; echo "Test_V3ltr0_2025!") | smbpasswd -a pfumero -s
+
+log "✓ Samba configurado"
+
+# 7. Iniciar servicios
+log "Iniciando servicios..."
 /usr/sbin/sshd
+smbd -D
+nmbd -D
 
-# 10. Verificar
-if pgrep -x sshd > /dev/null; then
-    log "✓ SSH corriendo correctamente"
-else
-    log "⚠ ERROR: SSH no pudo iniciarse"
-fi
+log "✓ Servicios iniciados"
 
-# 11. Mantener el contenedor vivo
+# 8. Mantener vivo
 log "File Server listo. Manteniendo servicios activos..."
 while true; do
     if ! pgrep -x sshd > /dev/null; then
-        log "SSH caído, reiniciando..."
         /usr/sbin/sshd
+    fi
+    if ! pgrep -x smbd > /dev/null; then
+        smbd -D
     fi
     sleep 30
 done

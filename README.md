@@ -5,41 +5,41 @@
 <p align="left">
   <img src="https://img.shields.io/badge/Docker-Ready-blue?logo=docker" />
   <img src="https://img.shields.io/badge/Status-Production-green" />
-  <img src="https://img.shields.io/badge/Platform-Windows%2010%2F11-blue" />
+  <img src="https://img.shields.io/badge/Platform-Windows%2010%2F11%20%7C%20Linux-blue" />
   <img src="https://img.shields.io/badge/License-Private-red" />
-  <img src="https://img.shields.io/badge/Version-1.0.0-orange" />
+  <img src="https://img.shields.io/badge/Version-2.0.0-orange" />
 </p>
 
 ---
 
-## 📑 Índice
+## 📑 ÍNDICE
 
-* [📋 Requisitos Previos](#-requisitos-previos)
-* [🚀 Instalación y Puesta en Marcha](#-instalación-y-puesta-en-marcha)
-* [🔧 Servicios y Puertos](#-servicios-y-puertos)
-* [📊 Comandos Útiles](#-comandos-útiles)
-* [🔄 Reinicio Completo](#-reinicio-completo-desde-cero)
-* [🐛 Solución de Problemas Comunes](#-solución-de-problemas-comunes)
-
-  * [🔑 Problema de known_hosts (claves SSH)](#-problema-de-known_hosts-claves-ssh)
-* [📁 Estructura de Archivos](#-estructura-de-archivos)
-* [🔐 Credenciales](#-credenciales)
-* [📌 Notas Finales](#-notas-finales)
+- [📋 Requisitos Previos](#-requisitos-previos)
+- [🚀 Instalación y Puesta en Marcha](#-instalación-y-puesta-en-marcha)
+- [🔧 Servicios y Puertos](#-servicios-y-puertos)
+- [📊 Comandos Útiles](#-comandos-útiles)
+  - [PowerShell (Windows)](#powershell-windows)
+  - [Bash (Linux/WSL)](#bash-linuxwsl)
+- [🔄 Reinicio Completo](#-reinicio-completo-desde-cero)
+- [🐛 Solución de Problemas Comunes](#-solución-de-problemas-comunes)
+- [📁 Estructura de Archivos](#-estructura-de-archivos)
+- [🔐 Credenciales](#-credenciales)
+- [📌 Notas Finales](#-notas-finales)
 
 ---
 
-## 📋 Requisitos Previos
+## 📋 REQUISITOS PREVIOS
 
 > ⚠️ Asegurate de cumplir con estos requisitos antes de comenzar
 
-| Requisito          | Versión / Especificación            |
-| ------------------ | ----------------------------------- |
-| **Docker Desktop** | 4.0+ (Windows 10/11 Pro/Enterprise) |
-| **PowerShell**     | 5.1+ (recomendado) o CMD            |
-| **Git**            | Opcional                            |
-| **RAM**            | 8 GB mínimo (16 GB recomendado)     |
-| **Disco**          | 20 GB libres                        |
-| **CPU**            | 4 núcleos                           |
+| Requisito | Windows | Linux/WSL |
+|-----------|---------|-----------|
+| **Docker** | Docker Desktop 4.0+ | Docker Engine 20.10+ |
+| **Shell** | PowerShell 5.1+ | Bash 4.0+ |
+| **Git** | Opcional | Opcional |
+| **RAM** | 8 GB mínimo (16 GB recomendado) |
+| **Disco** | 20 GB libres |
+| **CPU** | 4 núcleos |
 
 ---
 
@@ -53,6 +53,7 @@ cd Veltro_infra
 ```
 
 ### 2. Crear carpetas necesarias
+#### 2.1. Desde Poweshell
 
 ```powershell
 # Desde PowerShell (como Administrador)
@@ -63,7 +64,11 @@ New-Item -ItemType Directory -Force -Path @(
     "logs/backup","logs/waf","logs/monitoring"
 ) | Out-Null
 ```
-
+#### 2.2. Desde Bash
+```bash
+mkdir -p data/{db-master,db-slave,web,grafana,prometheus,backup,fileserver}
+mkdir -p logs/{web,db-master,db-slave,haproxy,backup,waf,monitoring}
+```
 ### 3. Configurar archivo `.env` (opcional)
 
 El archivo `.env` ya contiene configuraciones por defecto. Si querés modificarlas:
@@ -77,7 +82,7 @@ DB_REPLICATION_PASSWORD=Replicator_V3ltr0_2025!
 GRAFANA_ADMIN_PASSWORD=Gr4f4n4_V3ltr0_2025!
 
 # Puertos (opcional)
-WEB_HTTP_PORT=8081
+WEB_HTTP_PORT=8181
 DB_MASTER_PORT=3316
 DB_SLAVE_PORT=3307
 ```
@@ -100,8 +105,14 @@ docker-compose logs -f
 Start-Sleep -Seconds 120
 ```
 
+```bash
+sleep 120
+```
+
+
 ### 6. Verificar funcionamiento
 
+#### 6.1. En Powershell
 ```powershell
 docker-compose ps
 
@@ -109,6 +120,49 @@ docker exec svveltrobds mysql -uroot -pSlaveDB_V3ltr0_2025! -e "SHOW SLAVE STATU
 
 docker exec svveltrobds mysql -uroot -pSlaveDB_V3ltr0_2025! -e "SELECT COUNT(*) FROM veltro_prod.equipos;"
 ```
+#### 6.2. En Bash
+```bash
+docker-compose ps
+
+docker exec svveltrobds mysql -uroot -pSlaveDB_V3ltr0_2025! -e "SHOW SLAVE STATUS\G" | grep "Running"
+
+docker exec svveltrobds mysql -uroot -pSlaveDB_V3ltr0_2025! -e "SELECT COUNT(*) FROM veltro_prod.equipos;"
+```
+---
+# ⚒️ Comandos necesarios post instalación
+## 🔐 Setup SSH
+### Desde Windows
+```powershell
+./scripts/init/setup-ssh-config.sh
+```
+### Desde Linux
+```bash
+./scripts/init/setup-ssh-config.sh
+```
+## 📊 DASHBOARDS DE GRAFANA
+### ⚠️ IMPORTANTE: Los dashboards NO se crean automáticamente
+
+#### 1. Ejecutar script de dashboards (OBLIGATORIO)
+
+```bash
+docker cp scripts/init/grafana-dashboards.sh grafana:/tmp/
+docker exec grafana chmod +x /tmp/grafana-dashboards.sh
+docker exec grafana bash /tmp/grafana-dashboards.sh
+```
+
+---
+
+#### 2. Si las métricas de backup no aparecen (OPCIONAL)
+
+```bash
+# Ejecutar script de métricas
+docker exec svveltrobackup /usr/local/bin/backup_metrics.sh
+
+# Verificar
+docker exec svveltrobackup cat /var/lib/node_exporter/textfile/backup.prom
+```
+
+
 
 ---
 
@@ -125,14 +179,14 @@ docker exec svveltrobds mysql -uroot -pSlaveDB_V3ltr0_2025! -e "SELECT COUNT(*) 
 | HAProxy Stats         | sqlproxy              | 8404   | admin / admin                  |
 | Prometheus            | svveltromonit         | 9090   | http://localhost:9090          |
 | Grafana               | grafana               | 3000   | admin / Gr4f4n4_V3ltr0_2025!   |
-| Backup Server SSH     | svveltrobackup        | 2022   | root / B4ckupR00t_V3ltr0_2025! |
+| Backup Server SSH     | svveltrobackup        | 2022   | backup / B4ckupR00t_V3ltr0_2025! |
 | File Server SSH       | fileserver            | 2222   | mlopez / Admin_V3ltr0_2025!    |
 | MySQL Exporter Master | mysql-exporter-master | 9104   | Métricas                       |
 | MySQL Exporter Slave  | mysql-exporter-slave  | 9105   | Métricas                       |
 
 ---
 
-## 📊 Comandos Útiles
+## ⚙️ Comandos Útiles
 
 ### 🧩 Gestión de contenedores
 
@@ -152,13 +206,6 @@ docker exec -it svveltrobdm mysql -uroot -pMasterDB_V3ltr0_2025!
 docker exec -it svveltrobds mysql -uroot -pSlaveDB_V3ltr0_2025!
 ```
 
-### 🔑 Acceso SSH
-
-```powershell
-ssh -p 2022 root@localhost
-ssh -p 2222 mlopez@localhost
-```
-
 ### 📈 Monitoreo
 
 ```powershell
@@ -176,7 +223,7 @@ CREATE TABLE prueba (id INT, nombre VARCHAR(50));
 INSERT INTO prueba VALUES (1, 'Test replicación');
 "
 
-Start-Sleep -Seconds 2
+Start-Sleep -Seconds 2 # En Linux es Sleep
 
 docker exec svveltrobds mysql -uroot -pSlaveDB_V3ltr0_2025! -e "USE test_replica; SELECT * FROM prueba;"
 ```
@@ -184,7 +231,7 @@ docker exec svveltrobds mysql -uroot -pSlaveDB_V3ltr0_2025! -e "USE test_replica
 ---
 
 ## 🔄 Reinicio Completo (desde cero)
-
+### En Windows
 ⚠️ Este proceso elimina todos los datos.
 
 ```powershell
@@ -216,7 +263,34 @@ Start-Sleep -Seconds 120
 docker-compose ps
 docker exec svveltrobds mysql -uroot -pSlaveDB_V3ltr0_2025! -e "SHOW SLAVE STATUS\G" | Select-String "Running"
 ```
+### En Linux
+```bash
+cd /ruta/Veltro_infra
 
+# 1. Detener y eliminar todo
+docker-compose down -v
+
+# 2. Eliminar datos
+rm -rf data/ logs/
+
+# 3. Recrear carpetas
+mkdir -p data/{db-master,db-slave,web,grafana,prometheus,backup,fileserver}
+mkdir -p logs/{web,db-master,db-slave,haproxy,backup,waf,monitoring}
+
+# 4. Levantar todo
+docker-compose up -d
+
+# 5. Esperar inicialización
+sleep 120
+
+# 6. Configurar SSH
+./scripts/init/setup-ssh-config.sh
+
+# 7. Crear dashboards
+docker cp scripts/init/grafana-dashboards.sh grafana:/tmp/
+docker exec grafana chmod +x /tmp/grafana-dashboards.sh
+docker exec grafana bash /tmp/grafana-dashboards.sh
+```
 ---
 
 ## 🐛 Solución de Problemas Comunes
@@ -253,8 +327,9 @@ docker-compose up -d
 ## 🔑 Problema de known_hosts (claves SSH)
 
 ```powershell
+./scripts/init/setup-ssh-config.sh
 ssh-keygen -R "[localhost]:2022"
-ssh-keygen -R "[localhost]:2222"
+ssh-keygen -R "[localhost]:2322"
 ```
 
 ---
@@ -296,33 +371,6 @@ Veltro_infra/
 ```
 
 ---
-
-# 📊 DASHBOARDS DE GRAFANA
-## ⚠️ IMPORTANTE: Los dashboards NO se crean automáticamente
-
-### 1. Ejecutar script de dashboards (OBLIGATORIO)
-
-```bash
-docker cp scripts/init/grafana-dashboards.sh grafana:/tmp/
-docker exec grafana chmod +x /tmp/grafana-dashboards.sh
-docker exec grafana bash /tmp/grafana-dashboards.sh
-```
-
----
-
-### 2. Si las métricas de backup no aparecen (OPCIONAL)
-
-```bash
-# Ejecutar script de métricas
-docker exec svveltrobackup /usr/local/bin/backup_metrics.sh
-
-# Verificar
-docker exec svveltrobackup cat /var/lib/node_exporter/textfile/backup.prom
-```
-
----
-
-
 ## 🔐 Credenciales
 
 | Servicio            | Usuario    | Contraseña              |
@@ -332,7 +380,7 @@ docker exec svveltrobackup cat /var/lib/node_exporter/textfile/backup.prom
 | Usuario replicación | replicator | Replicator_V3ltr0_2025! |
 | Usuario exporter    | exporter   | Exp0rt3r_2025!          |
 | Grafana             | admin      | Gr4f4n4_V3ltr0_2025!    |
-| Backup Server SSH   | root       | B4ckupR00t_V3ltr0_2025! |
+| Backup Server SSH   | backup       | B4ckupR00t_V3ltr0_2025! |
 | File Server SSH     | mlopez     | Admin_V3ltr0_2025!      |
 | File Server SSH     | fmartinez  | Dev_V3ltr0_2025!        |
 | File Server SSH     | ngalego    | Dev_V3ltr0_2025!        |
@@ -344,12 +392,15 @@ docker exec svveltrobackup cat /var/lib/node_exporter/textfile/backup.prom
 
 ## 📌 Notas Finales
 
-* ✅ Esperar ~90 segundos tras levantar los servicios
+* ✅ Esperar ~120 segundos tras levantar los servicios
 * ✅ Verificar con `docker-compose ps` que estén **Up/Healthy**
+* ✅ Ejecutar ./scripts/init/setup-ssh-config.sh para configurar SSH
+* ✅ Ejecutar script de dashboards para crear dashboards en Grafana
 * ✅ Revisar logs ante fallos: `docker-compose logs --tail 100 <servicio>`
 * ✅ La replicación se configura automáticamente
 * ✅ Datos de prueba cargados en el Master
 * ✅ Backup Server accede al File Server vía SSH sin contraseña
+* ✅ Usar ssh backup y ssh fileserver para acceder
 * ✅ Si aparece error de SSH, ver sección *known_hosts*
 * ⚠️ Esperar a que todos los contenedores estén `"healthy"` antes de usar
 
