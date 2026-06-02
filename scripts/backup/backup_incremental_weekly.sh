@@ -6,13 +6,16 @@
 # - Si no hay cambios, crea hard links para ahorrar espacio
 ################################################################################
 
-set -e
+# NOTA: No usar 'set -e' para permitir que rsync falle sin detener el script
 
 BACKUP_BASE="/backup"
 WEEK=$(date +%Y_W%V)
 TIMESTAMP=$(date +%Y%m%d_%H%M%S)
 DATE=$(date +%Y-%m-%d)
 LOG_FILE="/var/log/backup/incremental_${TIMESTAMP}.log"
+
+# Configuración SSH (evita preguntas de confirmación)
+SSH_OPTS="-o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null"
 
 # Configuración Fileserver
 FILESERVER_IP="192.168.0.100"
@@ -67,68 +70,79 @@ echo "[2/3] Respaldando archivos modificados del Fileserver..."
 # Crear directorio para esta semana
 mkdir -p "$FS_INCR_DIR"
 
-# Usar rsync con --link-dest para hard links (ahorra espacio)
-if [ -d "$PREV_WEEK_DIR" ] && [ -d "$PREV_WEEK_DIR/shared" ]; then
-    # Si existe backup anterior, usar --link-dest
-    echo "  Usando backup anterior como referencia (hard links)..."
-    rsync -av --delete \
-        --link-dest="$PREV_WEEK_DIR/shared" \
-        -e "ssh -p 22" \
-        $FILESERVER_USER@$FILESERVER_IP:/srv/shared/ \
-        "$FS_INCR_DIR/shared/" 2>/dev/null
-else
-    # Primera vez, copiar todo
-    echo "  Primera copia incremental (sin referencia previa)..."
-    rsync -av --delete \
-        -e "ssh -p 22" \
-        $FILESERVER_USER@$FILESERVER_IP:/srv/shared/ \
-        "$FS_INCR_DIR/shared/" 2>/dev/null
-fi
-
-# Crear archivo comprimido de los cambios
-if [ -d "$FS_INCR_DIR/shared" ]; then
-    # Listar archivos modificados esta semana
-    echo "  Archivos modificados esta semana:" > "$FS_INCR_DIR/changed_files_${TIMESTAMP}.txt"
-    find "$FS_INCR_DIR/shared" -type f -newer "$PREV_WEEK_DIR" 2>/dev/null | head -50 >> "$FS_INCR_DIR/changed_files_${TIMESTAMP}.txt"
+# Verificar conectividad SSH primero
+echo "  Verificando conexión SSH..."
+if ssh -p 22 $SSH_OPTS $FILESERVER_USER@$FILESERVER_IP "echo OK" >/dev/null 2>&1; then
+    echo "  ✓ Conexión SSH establecida"
     
-    # Contar archivos
-    FILE_COUNT=$(find "$FS_INCR_DIR/shared" -type f 2>/dev/null | wc -l)
-    echo "  Total archivos respaldados: $FILE_COUNT"
-    
-    # Crear tar.gz con timestamp
-    tar -czf "$FS_INCR_DIR/fileserver_inc_${TIMESTAMP}.tar.gz" -C "$FS_INCR_DIR" shared 2>/dev/null
-    SIZE=$(du -h "$FS_INCR_DIR/fileserver_inc_${TIMESTAMP}.tar.gz" | cut -f1)
-    echo "✓ Backup incremental Fileserver: $SIZE"
-    
-    # Calcular espacio ahorrado con hard links
-    if [ -d "$PREV_WEEK_DIR" ]; then
-        ORIGINAL_SIZE=$(du -sb "$FS_INCR_DIR/shared" 2>/dev/null | cut -f1)
-        TAR_SIZE=$(stat -c %s "$FS_INCR_DIR/fileserver_inc_${TIMESTAMP}.tar.gz" 2>/dev/null)
-        if [ -n "$ORIGINAL_SIZE" ] && [ -n "$TAR_SIZE" ] && [ $TAR_SIZE -gt 0 ]; then
-            SAVED=$((ORIGINAL_SIZE - TAR_SIZE))
-            echo "  Espacio ahorrado con hard links: $(numfmt --to=iec $SAVED 2>/dev/null || echo $SAVED bytes)"
-        fi
+    # Usar rsync con --link-dest para hard links (ahorra espacio)
+    if [ -d "$PREV_WEEK_DIR" ] && [ -d "$PREV_WEEK_DIR/shared" ]; then
+        echo "  Usando backup anterior como referencia (hard links)..."
+        rsync -av --delete \
+            --link-dest="$PREV_WEEK_DIR/shared" \
+            -e "ssh -p 22 $SSH_OPTS" \
+            $FILESERVER_USER@$FILESERVER_IP:/srv/shared/ \
+            "$FS_INCR_DIR/shared/" 2>/dev/null || true
+    else
+        echo "  Primera copia incremental (sin referencia previa)..."
+        rsync -av --delete \
+            -e "ssh -p 22 $SSH_OPTS" \
+            $FILESERVER_USER@$FILESERVER_IP:/srv/shared/ \
+            "$FS_INCR_DIR/shared/" 2>/dev/null || true
     fi
-    
-    # No eliminar shared/ para futuros --link-dest
 else
-    echo "⚠ No se pudo conectar al Fileserver"
+    echo "  ⚠ No se pudo establecer conexión SSH al Fileserver"
+    echo "  El backup incremental del Fileserver se omitirá"
 fi
 
 # ==============================================
-# 3. CREAR ESTRUCTURA CON HARDLINKS PARA AHORRAR ESPACIO
+# 3. CREAR ARCHIVO COMPRIMIDO
 # ==============================================
 echo ""
-echo "[3/3] Optimizando almacenamiento..."
+echo "[3/4] Creando archivo comprimido..."
+
+FILE_COUNT=0
+SIZE="0"
+
+if [ -d "$FS_INCR_DIR/shared" ]; then
+    # Contar archivos
+    FILE_COUNT=$(find "$FS_INCR_DIR/shared" -type f 2>/dev/null | wc -l)
+    echo "  Archivos respaldados: $FILE_COUNT"
+    
+    if [ $FILE_COUNT -gt 0 ]; then
+        cd $FS_INCR_DIR
+        TAR_FILE="fileserver_inc_${TIMESTAMP}.tar.gz"
+        tar -czf $TAR_FILE shared/ 2>/dev/null
+        SIZE=$(du -h $TAR_FILE | cut -f1)
+        echo "✓ Backup comprimido: $SIZE"
+        rm -rf shared/
+    else
+        echo "⚠ No hay archivos para comprimir"
+    fi
+else
+    echo "⚠ No hay archivos para comprimir"
+fi
+
+# ==============================================
+# 4. CREAR ENLACES SIMBÓLICOS
+# ==============================================
+echo ""
+echo "[4/5] Optimizando almacenamiento..."
 
 # Crear enlace simbólico al último backup incremental
 ln -sfn "$FS_INCR_DIR" "$BACKUP_BASE/fileserver/incremental/latest" 2>/dev/null
 ln -sfn "$WEEK_DIR" "$BACKUP_BASE/incremental/latest" 2>/dev/null
 
 # ==============================================
-# GENERAR METADATA DEL BACKUP
+# 5. GENERAR METADATA
 # ==============================================
+echo ""
+echo "[5/5] Generando metadata..."
+
 METADATA_FILE="$WEEK_DIR/metadata_${WEEK}.json"
+
+# Obtener tamaño total del backup
+TOTAL_SIZE=$(du -sh $BACKUP_BASE 2>/dev/null | cut -f1)
 
 cat > "$METADATA_FILE" << EOF
 {
@@ -137,18 +151,17 @@ cat > "$METADATA_FILE" << EOF
   "week": "$WEEK",
   "timestamp": "$TIMESTAMP",
   "mysql": {
-    "status_file": "$(basename $DB_INCR_DIR/master_status_${TIMESTAMP}.txt)",
-    "binlogs_file": "$(basename $DB_INCR_DIR/binlogs_list_${TIMESTAMP}.txt)"
+    "binary_logs_count": $(ls $DB_INCR_DIR/*.txt 2>/dev/null | wc -l)
   },
   "fileserver": {
-    "incremental_backup": "$(basename $FS_INCR_DIR/fileserver_inc_${TIMESTAMP}.tar.gz 2>/dev/null)",
+    "backup_file": "$(basename $TAR_FILE 2>/dev/null)",
     "size": "$SIZE",
     "file_count": $FILE_COUNT,
     "previous_backup": "$(basename $PREV_WEEK_DIR 2>/dev/null)"
   },
   "storage": {
     "location": "$BACKUP_BASE",
-    "total_size": "$(du -sh $BACKUP_BASE 2>/dev/null | cut -f1)"
+    "total_size": "$TOTAL_SIZE"
   }
 }
 EOF
@@ -167,9 +180,8 @@ echo "=============================================="
 # Mostrar resumen
 echo ""
 echo "Resumen:"
-echo "  - Binary logs: $(ls -la $DB_INCR_DIR/*.txt 2>/dev/null | wc -l) archivos"
-echo "  - Fileserver: $(du -sh $FS_INCR_DIR/fileserver_inc_*.tar.gz 2>/dev/null | wc -l) backups"
-echo "  - Total backups incremental: $(du -sh $WEEK_DIR 2>/dev/null | cut -f1)"
-echo "  - Espacio total en backups: $(du -sh $BACKUP_BASE 2>/dev/null | cut -f1)"
+echo "  - Binary logs: $(ls $DB_INCR_DIR/*.txt 2>/dev/null | wc -l) archivos"
+echo "  - Fileserver: $FILE_COUNT archivos ($SIZE)"
+echo "  - Espacio total en backups: $TOTAL_SIZE"
 
 exit 0

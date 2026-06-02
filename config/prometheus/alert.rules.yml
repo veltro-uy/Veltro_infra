@@ -5,92 +5,92 @@ groups:
   - name: mysql_alerts
     interval: 30s
     rules:
-      - alert: MySQLDown
+      - alert: MySQLCaido
         expr: mysql_up == 0
         for: 1m
         labels:
           severity: critical
         annotations:
-          summary: "MySQL instance {{ $labels.instance }} is down"
-          description: "MySQL has been down for more than 1 minute"
+          summary: "La instancia MySQL {{ $labels.instance }} está caída"
+          description: "MySQL ha estado caído por más de 1 minuto"
 
-      - alert: MySQLReplicationNotRunning
+      - alert: ReplicacionMySQLNoActiva
         expr: mysql_slave_status_slave_io_running == 0 or mysql_slave_status_slave_sql_running == 0
         for: 1m
         labels:
           severity: critical
         annotations:
-          summary: "MySQL replication is not running"
-          description: "Replication IO or SQL thread is stopped"
+          summary: "La replicación de MySQL no está activa"
+          description: "El hilo IO o SQL de replicación está detenido"
 
-      - alert: MySQLReplicationLag
+      - alert: RetrasoReplicacionMySQL
         expr: mysql_slave_status_seconds_behind_master > 10
         for: 1m
         labels:
           severity: warning
         annotations:
-          summary: "MySQL replication lag is high"
-          description: "Replication lag is {{ $value }} seconds"
+          summary: "El retraso de replicación de MySQL es alto"
+          description: "El retraso de replicación es de {{ $value }} segundos"
 
-      - alert: MySQLHighConnections
+      - alert: AltoNumeroConexionesMySQL
         expr: mysql_global_status_threads_connected > 100
         for: 2m
         labels:
           severity: warning
         annotations:
-          summary: "High number of connections"
-          description: "Connections: {{ $value }}"
+          summary: "Alto número de conexiones"
+          description: "Conexiones: {{ $value }}"
 
-      - alert: MySQLSlowQueries
+      - alert: ConsultasLentasMySQL
         expr: rate(mysql_global_status_slow_queries[5m]) > 1
         for: 5m
         labels:
           severity: warning
         annotations:
-          summary: "High number of slow queries"
-          description: "Slow queries per second: {{ $value }}"
+          summary: "Alto número de consultas lentas"
+          description: "Consultas lentas por segundo: {{ $value }}"
 
   # ==============================================
-  # ALERTAS DE APACHE / WEB SERVER
+  # ALERTAS DE APACHE / SERVIDOR WEB
   # ==============================================
   - name: apache_alerts
     interval: 30s
     rules:
-      - alert: ApacheDown
+      - alert: ApacheCaido
         expr: apache_up == 0
         for: 1m
         labels:
           severity: critical
         annotations:
-          summary: "Apache web server is down"
-          description: "Apache has been down for more than 1 minute"
+          summary: "El servidor web Apache está caído"
+          description: "Apache ha estado caído por más de 1 minuto"
 
-      - alert: ApacheHighCPULoad
+      - alert: AltoUsoCPUApache
         expr: apache_cpuload > 80
         for: 5m
         labels:
           severity: warning
         annotations:
-          summary: "Apache CPU load is high"
-          description: "Apache CPU load is {{ $value }}%"
+          summary: "El uso de CPU de Apache es alto"
+          description: "El uso de CPU de Apache es del {{ $value }}%"
 
-      - alert: ApacheHighTraffic
+      - alert: AltoTraficoApache
         expr: rate(apache_sent_kilobytes_total[5m]) > 5000
         for: 5m
         labels:
           severity: warning
         annotations:
-          summary: "High outbound traffic on Apache"
-          description: "Traffic is {{ $value }} KB/s"
+          summary: "Tráfico saliente alto en Apache"
+          description: "El tráfico es de {{ $value }} KB/s"
 
-      - alert: ApacheHighRequests
+      - alert: AltoNumeroPeticionesApache
         expr: rate(apache_accesses_total[5m]) > 100
         for: 5m
         labels:
           severity: warning
-          annotations:
-          summary: "High number of requests per second"
-          description: "Requests per second: {{ $value }}"
+        annotations:
+          summary: "Alto número de peticiones por segundo"
+          description: "Peticiones por segundo: {{ $value }}"
 
   # ==============================================
   # ALERTAS DE SISTEMA (CPU, MEMORIA, DISCO)
@@ -98,51 +98,51 @@ groups:
   - name: system_alerts
     interval: 30s
     rules:
-      # Backup Server alerts
-      - alert: BackupServerDown
+      # Alertas del servidor de respaldos
+      - alert: ServidorRespaldosCaido
         expr: up{job="node-backup"} == 0
         for: 1m
         labels:
           severity: critical
         annotations:
-          summary: "Backup server is down"
-          description: "Node exporter is not responding"
+          summary: "El servidor de respaldos está caído"
+          description: "El exportador de nodos no está respondiendo"
 
-      - alert: HighCPUUsage_Backup
+      - alert: AltoUsoCPU_Respaldos
         expr: 100 - (avg by (instance) (rate(node_cpu_seconds_total{mode="idle"}[5m])) * 100) > 80
         for: 5m
         labels:
           severity: warning
         annotations:
-          summary: "High CPU usage on backup server"
-          description: "CPU usage is {{ $value }}%"
+          summary: "Alto uso de CPU en el servidor de respaldos"
+          description: "El uso de CPU es del {{ $value }}%"
 
-      - alert: HighMemoryUsage_Backup
+      - alert: AltoUsoMemoria_Respaldos
         expr: (1 - (node_memory_MemAvailable_bytes / node_memory_MemTotal_bytes)) * 100 > 90
         for: 5m
         labels:
           severity: warning
         annotations:
-          summary: "High memory usage on backup server"
-          description: "Memory usage is {{ $value }}%"
+          summary: "Alto uso de memoria en el servidor de respaldos"
+          description: "El uso de memoria es del {{ $value }}%"
 
-      - alert: LowDiskSpace_Backup
+      - alert: EspacioDiscoBajo_Respaldos
         expr: (node_filesystem_avail_bytes{mountpoint="/"} / node_filesystem_size_bytes{mountpoint="/"}) * 100 < 10
         for: 5m
         labels:
           severity: critical
         annotations:
-          summary: "Low disk space on backup server"
-          description: "Less than 10% disk space remaining"
+          summary: "Espacio de disco bajo en el servidor de respaldos"
+          description: "Queda menos del 10% de espacio en disco"
 
-      - alert: DiskWillFillIn24h_Backup
+      - alert: DiscoSeLlenara24h_Respaldos
         expr: predict_linear(node_filesystem_free_bytes{mountpoint="/"}[1h], 24*3600) < 0
         for: 1h
         labels:
           severity: warning
         annotations:
-          summary: "Disk will fill in less than 24 hours"
-          description: "Based on current filling rate"
+          summary: "El disco se llenará en menos de 24 horas"
+          description: "Basado en la tasa actual de llenado"
 
   # ==============================================
   # ALERTAS DE RESPALDOS
@@ -150,32 +150,32 @@ groups:
   - name: backup_alerts
     interval: 5m
     rules:
-      - alert: BackupNotPerformed
+      - alert: RespaldoNoRealizado
         expr: (time() - backup_last_timestamp_seconds) > 86400
         for: 5m
         labels:
           severity: warning
         annotations:
-          summary: "Backup not performed in last 24 hours"
-          description: "No successful backup in the last 24 hours"
+          summary: "No se ha realizado un respaldo en las últimas 24 horas"
+          description: "No hay respaldos exitosos en las últimas 24 horas"
 
-      - alert: BackupSizeTooSmall
+      - alert: TamanoRespaldoMuyPequeno
         expr: backup_mysql_size_bytes < 100000
         for: 5m
         labels:
           severity: warning
         annotations:
-          summary: "Backup size is suspiciously small"
-          description: "MySQL backup size is {{ $value }} bytes"
+          summary: "El tamaño del respaldo es sospechosamente pequeño"
+          description: "El tamaño del respaldo MySQL es de {{ $value }} bytes"
 
-      - alert: NoBackups
+      - alert: NoHayRespaldos
         expr: backup_total_count == 0
         for: 1m
         labels:
           severity: critical
         annotations:
-          summary: "No backups found"
-          description: "No backups have been created yet"
+          summary: "No se encontraron respaldos"
+          description: "Aún no se ha creado ningún respaldo"
 
   # ==============================================
   # ALERTAS DE CONTENEDORES
@@ -183,19 +183,19 @@ groups:
   - name: container_alerts
     interval: 30s
     rules:
-      - alert: ContainerDown
+      - alert: ContenedorCaido
         expr: container_last_seen{name=~".+"} == 0
         for: 1m
         labels:
           severity: critical
         annotations:
-          summary: "Container {{ $labels.name }} is down"
+          summary: "El contenedor {{ $labels.name }} está caído"
 
-      - alert: ContainerRestarting
+      - alert: ContenedorReiniciando
         expr: rate(container_last_seen[5m]) > 0
         for: 2m
         labels:
           severity: warning
         annotations:
-          summary: "Container {{ $labels.name }} is restarting frequently"
-          description: "Container has restarted in the last 5 minutes"
+          summary: "El contenedor {{ $labels.name }} se está reiniciando frecuentemente"
+          description: "El contenedor se ha reiniciado en los últimos 5 minutos"
