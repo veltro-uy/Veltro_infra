@@ -170,8 +170,8 @@ docker exec svveltrobackup cat /var/lib/node_exporter/textfile/backup.prom
 
 | Servicio              | Contenedor            | Puerto | Acceso / Credenciales          |
 | --------------------- | --------------------- | ------ | ------------------------------ |
-| Web App               | svveltroweb           | 8081   | http://localhost:8081          |
-| WAF                   | veltrowaf             | 8088   | http://localhost:8088          |
+| Web App               | svveltroweb           | 8181   | http://localhost:8081          |
+| WAF                   | veltrowaf             | 8188   | http://localhost:8088          |
 | MySQL Master          | svveltrobdm           | 3316   | root / MasterDB_V3ltr0_2025!   |
 | MySQL Slave           | svveltrobds           | 3307   | root / SlaveDB_V3ltr0_2025!    |
 | HAProxy (Escritura)   | sqlproxy              | 6033   | Balanceo                       |
@@ -180,7 +180,7 @@ docker exec svveltrobackup cat /var/lib/node_exporter/textfile/backup.prom
 | Prometheus            | svveltromonit         | 9090   | http://localhost:9090          |
 | Grafana               | grafana               | 3000   | admin / Gr4f4n4_V3ltr0_2025!   |
 | Backup Server SSH     | svveltrobackup        | 2022   | backup / B4ckupR00t_V3ltr0_2025! |
-| File Server SSH       | fileserver            | 2222   | mlopez / Admin_V3ltr0_2025!    |
+| File Server SSH       | fileserver            | 2322   | mlopez / Admin_V3ltr0_2025!    |
 | MySQL Exporter Master | mysql-exporter-master | 9104   | Métricas                       |
 | MySQL Exporter Slave  | mysql-exporter-slave  | 9105   | Métricas                       |
 
