@@ -20,9 +20,21 @@ echo "✓ Clave copiada"
 
 # 3. Agregar la clave pública al File Server
 echo "Agregando clave al File Server..."
+
 PUB_KEY=$(cat ~/.ssh/id_rsa_backup.pub)
-docker exec fileserver bash -c "mkdir -p /home/mlopez/.ssh && echo '$PUB_KEY' >> /home/mlopez/.ssh/authorized_keys && chmod 600 /home/mlopez/.ssh/authorized_keys && chmod 700 /home/mlopez/.ssh && chown -R mlopez:mlopez /home/mlopez/.ssh"
-echo "✓ Clave agregada al File Server"
+
+docker exec fileserver bash -c '
+for u in mlopez fmartinez ngalego mlandaco pfumero
+do
+    mkdir -p /home/$u/.ssh
+    echo "'"$PUB_KEY"'" > /home/$u/.ssh/authorized_keys
+    chmod 700 /home/$u/.ssh
+    chmod 600 /home/$u/.ssh/authorized_keys
+    chown -R $u:$u /home/$u/.ssh
+done
+'
+
+echo "✓ Clave agregada a todos los usuarios del File Server"
 
 # 4. Configurar acceso SSH
 echo "Configurando ~/.ssh/config..."
@@ -35,10 +47,42 @@ Host backup
     StrictHostKeyChecking no
     UserKnownHostsFile /dev/null
 
-Host fileserver
+Host mlopez
     HostName localhost
     Port 2322
     User mlopez
+    IdentityFile ~/.ssh/id_rsa_backup
+    StrictHostKeyChecking no
+    UserKnownHostsFile /dev/null
+
+Host fmartinez 
+    HostName localhost
+    Port 2322
+    User fmartinez
+    IdentityFile ~/.ssh/id_rsa_backup
+    StrictHostKeyChecking no
+    UserKnownHostsFile /dev/null
+
+Host ngalego
+    HostName localhost
+    Port 2322
+    User ngalego
+    IdentityFile ~/.ssh/id_rsa_backup
+    StrictHostKeyChecking no
+    UserKnownHostsFile /dev/null
+
+Host mlandaco
+    HostName localhost
+    Port 2322
+    User mlandaco
+    IdentityFile ~/.ssh/id_rsa_backup
+    StrictHostKeyChecking no
+    UserKnownHostsFile /dev/null
+
+Host pfumero
+    HostName localhost
+    Port 2322
+    User pfumero
     IdentityFile ~/.ssh/id_rsa_backup
     StrictHostKeyChecking no
     UserKnownHostsFile /dev/null
@@ -57,8 +101,8 @@ else
     echo "❌ ERROR"
 fi
 
-echo -n "File Server: "
-if ssh -o ConnectTimeout=5 fileserver "echo OK" 2>/dev/null; then
+echo -n "File Server (mlopez): "
+if ssh -o ConnectTimeout=5 mlopez "echo OK" 2>/dev/null; then
     echo "✅ OK"
 else
     echo "❌ ERROR"
@@ -66,6 +110,14 @@ fi
 
 echo ""
 echo "=== CONFIGURACIÓN SSH COMPLETADA ==="
-echo "Ahora puedes conectarte con:"
-echo "  ssh backup"
-echo "  ssh fileserver"
+echo "Ahora puedes acceder por SSH a los servidores con los siguientes alias:"
+echo ""
+echo "  Backup Server:"
+echo "    ssh backup"
+echo ""
+echo "  File Server:"
+echo "    ssh mlopez"
+echo "    ssh fmartinez"
+echo "    ssh ngalego"
+echo "    ssh mlandaco"
+echo "    ssh pfumero"
