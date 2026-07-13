@@ -179,8 +179,8 @@ docker exec svveltrobackup cat /var/lib/node_exporter/textfile/backup.prom
 | HAProxy Stats         | sqlproxy              | 8404   | admin / admin                  |
 | Prometheus            | svveltromonit         | 9090   | http://localhost:9090          |
 | Grafana               | grafana               | 3000   | admin / Gr4f4n4_V3ltr0_2025!   |
-| Backup Server SSH     | svveltrobackup        | 2022   | backup / B4ckupR00t_V3ltr0_2025! |
-| File Server SSH       | fileserver            | 2322   | mlopez / Admin_V3ltr0_2025!    |
+| Backup Server SSH     | svveltrobackup        | 2022   | backup / Clave SSH |
+| File Server SSH       | fileserver            | 2322   | mlopez, fmartinez, etc. / Clave SSH   |
 | MySQL Exporter Master | mysql-exporter-master | 9104   | Métricas                       |
 | MySQL Exporter Slave  | mysql-exporter-slave  | 9105   | Métricas                       |
 
