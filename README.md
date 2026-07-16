@@ -140,8 +140,6 @@ docker exec svveltrobds mysql -uroot -pSlaveDB_V3ltr0_2025! -e "SELECT COUNT(*) 
 ./scripts/init/setup-ssh-config.sh
 ```
 ## 📊 DASHBOARDS DE GRAFANA
-### ⚠️ IMPORTANTE: Los dashboards NO se crean automáticamente
-
 #### 1. Ejecutar script de dashboards (OBLIGATORIO)
 
 ```bash
@@ -227,6 +225,20 @@ Start-Sleep -Seconds 2 # En Linux es Sleep
 
 docker exec svveltrobds mysql -uroot -pSlaveDB_V3ltr0_2025! -e "USE test_replica; SELECT * FROM prueba;"
 ```
+### 🔐 Acceso a servidores vía SSH
+
+```bash
+# Backup Server:
+ssh backup
+
+# File Server:
+ssh mlopez
+ssh fmartinez
+ssh ngalego
+ssh mlandaco
+ssh pfumero
+```
+
 
 ---
 
