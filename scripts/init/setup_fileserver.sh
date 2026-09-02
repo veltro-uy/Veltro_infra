@@ -1,6 +1,7 @@
 #!/bin/bash
 ################################################################################
-# VELTRO - Configuración del File Server con Samba
+# VELTRO - Configuración del File Server (Sin Samba)
+# Ejecutado automáticamente al levantar el contenedor
 ################################################################################
 
 set -e
@@ -15,7 +16,7 @@ log() {
 
 # 1. Instalar paquetes
 log "Instalando paquetes..."
-dnf install -y openssh-server sudo acl rsync telnet nc procps-ng net-tools samba samba-client
+dnf install -y openssh-server sudo rsync telnet nc procps-ng net-tools
 
 # 2. Configurar SSH
 log "Configurando SSH..."
@@ -41,7 +42,6 @@ log "Creando grupos..."
 groupadd admins 2>/dev/null || true
 groupadd developers 2>/dev/null || true
 groupadd testers 2>/dev/null || true
-groupadd sambashare 2>/dev/null || true
 
 # 4. Crear usuarios
 log "Creando usuarios..."
@@ -54,116 +54,80 @@ for user in mlopez fmartinez ngalego mlandaco pfumero; do
 done
 
 # Asignar grupos
-usermod -aG wheel,admins,sambashare mlopez
-usermod -aG developers,sambashare fmartinez
-usermod -aG developers,sambashare ngalego
-usermod -aG developers,sambashare mlandaco
-usermod -aG testers,sambashare pfumero
+usermod -aG wheel,admins mlopez 2>/dev/null || true
+usermod -aG developers fmartinez 2>/dev/null || true
+usermod -aG developers ngalego 2>/dev/null || true
+usermod -aG developers mlandaco 2>/dev/null || true
+usermod -aG testers pfumero 2>/dev/null || true
 
 # Establecer contraseñas
-echo 'mlopez:Admin_V3ltr0_2025!' | chpasswd
-echo 'fmartinez:Dev_V3ltr0_2025!' | chpasswd
-echo 'ngalego:Dev_V3ltr0_2025!' | chpasswd
-echo 'mlandaco:Dev_V3ltr0_2025!' | chpasswd
-echo 'pfumero:Test_V3ltr0_2025!' | chpasswd
+echo 'mlopez:Admin_V3ltr0_2025!' | chpasswd 2>/dev/null || true
+echo 'fmartinez:Dev_V3ltr0_2025!' | chpasswd 2>/dev/null || true
+echo 'ngalego:Dev_V3ltr0_2025!' | chpasswd 2>/dev/null || true
+echo 'mlandaco:Dev_V3ltr0_2025!' | chpasswd 2>/dev/null || true
+echo 'pfumero:Test_V3ltr0_2025!' | chpasswd 2>/dev/null || true
 
 log "✓ Usuarios configurados"
 
-# 5. Directorios
+# 5. Crear usuario backup (SOLO para backups)
+log "Creando usuario backup..."
+if ! id backup &>/dev/null; then
+    useradd -m -s /bin/bash backup
+    echo 'backup:B4ckup_V3ltr0_2025!' | chpasswd
+    log "  Usuario backup creado"
+else
+    log "  Usuario backup ya existe"
+fi
+
+# 6. Directorios
 log "Creando directorios..."
 mkdir -p /srv/shared/{admin,devs,testers,common,logs,projects}
 
-chown -R mlopez:admins /srv/shared/admin
-chown -R root:developers /srv/shared/devs
-chown -R pfumero:testers /srv/shared/testers
-chown -R root:root /srv/shared/common
-chown -R mlopez:admins /srv/shared/logs
-chown -R root:developers /srv/shared/projects
+# 7. Permisos
+log "Configurando permisos..."
 
-chmod 2770 /srv/shared/admin
-chmod 2770 /srv/shared/devs
-chmod 2770 /srv/shared/testers
-chmod 2775 /srv/shared/common
-chmod 2770 /srv/shared/logs
-chmod 2770 /srv/shared/projects
+# Propietarios
+chown -R mlopez:admins /srv/shared/admin 2>/dev/null || true
+chown -R root:developers /srv/shared/devs 2>/dev/null || true
+chown -R pfumero:testers /srv/shared/testers 2>/dev/null || true
+chown -R root:root /srv/shared/common 2>/dev/null || true
+chown -R mlopez:admins /srv/shared/logs 2>/dev/null || true
+chown -R root:developers /srv/shared/projects 2>/dev/null || true
 
-# 6. Configurar Samba
-log "Configurando Samba..."
+chmod 2770 /srv/shared/admin 2>/dev/null || true
+chmod 2770 /srv/shared/devs 2>/dev/null || true
+chmod 2770 /srv/shared/testers 2>/dev/null || true
+chmod 2775 /srv/shared/common 2>/dev/null || true
+chmod 2770 /srv/shared/logs 2>/dev/null || true
+chmod 2770 /srv/shared/projects 2>/dev/null || true
 
-cat > /etc/samba/smb.conf <<'EOF'
-[global]
-   workgroup = VELTRO
-   server string = VELTRO File Server
-   netbios name = FILESERVER
-   security = user
-   map to guest = Bad User
-   passdb backend = tdbsam
+# ⭐ Dar permisos de LECTURA al usuario backup en TODO
+log "Dando permisos de lectura a backup en /srv/shared..."
+usermod -aG admins,developers,testers backup 2>/dev/null || true
+chmod -R 755 /srv/shared 2>/dev/null || true
 
-[admin]
-   path = /srv/shared/admin
-   valid users = @admins
-   admin users = mlopez
-   read only = no
-   browsable = yes
-   create mask = 0660
-   directory mask = 0770
+log "✓ Permisos aplicados"
 
-[devs]
-   path = /srv/shared/devs
-   valid users = @developers
-   read only = no
-   browsable = yes
-   create mask = 0660
-   directory mask = 0770
+# 8. ⭐ Crear directorio .ssh para todos los usuarios (preparado para la clave)
+log "Preparando directorios .ssh para todos los usuarios..."
+for user in backup mlopez fmartinez ngalego mlandaco pfumero; do
+    mkdir -p /home/$user/.ssh
+    chmod 700 /home/$user/.ssh
+    chown -R $user:$user /home/$user/.ssh
+done
+log "✓ Directorios .ssh preparados"
 
-[testers]
-   path = /srv/shared/testers
-   valid users = @testers
-   read only = no
-   browsable = yes
-   create mask = 0660
-   directory mask = 0770
-
-[common]
-   path = /srv/shared/common
-   valid users = @admins,@developers,@testers
-   read only = yes
-   browsable = yes
-
-[projects]
-   path = /srv/shared/projects
-   valid users = @developers,@admins
-   read only = no
-   browsable = yes
-   create mask = 0660
-   directory mask = 0770
-EOF
-
-# Contraseñas Samba
-(echo "Admin_V3ltr0_2025!"; echo "Admin_V3ltr0_2025!") | smbpasswd -a mlopez -s
-(echo "Dev_V3ltr0_2025!"; echo "Dev_V3ltr0_2025!") | smbpasswd -a fmartinez -s
-(echo "Dev_V3ltr0_2025!"; echo "Dev_V3ltr0_2025!") | smbpasswd -a ngalego -s
-(echo "Dev_V3ltr0_2025!"; echo "Dev_V3ltr0_2025!") | smbpasswd -a mlandaco -s
-(echo "Test_V3ltr0_2025!"; echo "Test_V3ltr0_2025!") | smbpasswd -a pfumero -s
-
-log "✓ Samba configurado"
-
-# 7. Iniciar servicios
+# 9. Iniciar servicios
 log "Iniciando servicios..."
 /usr/sbin/sshd
-smbd -D
-nmbd -D
 
 log "✓ Servicios iniciados"
 
-# 8. Mantener vivo
+# 10. Mantener vivo
 log "File Server listo. Manteniendo servicios activos..."
 while true; do
     if ! pgrep -x sshd > /dev/null; then
         /usr/sbin/sshd
-    fi
-    if ! pgrep -x smbd > /dev/null; then
-        smbd -D
     fi
     sleep 30
 done

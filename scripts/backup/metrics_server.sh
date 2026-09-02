@@ -9,5 +9,5 @@ while true; do
         echo -e "Connection: close"
         echo -e ""
         cat $METRICS_FILE 2>/dev/null || echo "# No metrics available"
-    } | nc -l -p $PORT -q 1
+    } | nc -l -p $PORT -w 1
 done

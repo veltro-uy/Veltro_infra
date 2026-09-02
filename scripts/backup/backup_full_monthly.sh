@@ -30,7 +30,14 @@ md5sum "$MYSQL_BACKUP" > "${MYSQL_BACKUP}.md5"
 # Backup Fileserver
 echo ""
 echo "[2/3] Backup de Fileserver..."
-/scripts/backup_fileserver.sh
+if /scripts/backup_fileserver.sh; then
+    echo "✓ Backup de Fileserver completado"
+else
+    echo "❌ El backup del Fileserver falló. Abortando backup mensual."
+    echo "   El backup de MySQL de arriba sí se completó, pero el mensual"
+    echo "   se considera INCOMPLETO. Revisá la conexión SSH al Fileserver."
+    exit 1
+fi
 
 # Backup binary logs
 echo ""
