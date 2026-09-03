@@ -2,8 +2,8 @@
 ################################################################################
 # VELTRO - Instalación de clave SSH del Backup Server en el File Server
 #
-# Se ejecuta automáticamente después de 'docker-compose up -d' (ver
-# start-veltro.sh). Usa 'docker exec' para copiar la clave, NO SSH,
+# Se ejecuta manualmente después de 'docker-compose up -d' (ver README,
+# sección de Instalación). Usa 'docker exec' para copiar la clave, NO SSH,
 # así que no depende de PasswordAuthentication ni de que ambos
 # contenedores compartan red/DNS de Docker.
 ################################################################################
@@ -99,7 +99,8 @@ else
     exit 1
 fi
 
-# 6. Copiar clave privada al host (opcional, útil para debug manual desde el host)
+# 6. Copiar clave privada al host (necesaria para que el host pueda hacer
+#    'ssh backup', 'ssh mlopez', etc. directamente, sin pasar por docker exec)
 log "Copiando clave al host..."
 mkdir -p ~/.ssh
 docker cp svveltrobackup:/home/backup/.ssh/id_rsa ~/.ssh/id_rsa_backup 2>/dev/null
@@ -108,7 +109,88 @@ chmod 600 ~/.ssh/id_rsa_backup 2>/dev/null
 chmod 644 ~/.ssh/id_rsa_backup.pub 2>/dev/null
 log "✅ Clave copiada al host"
 
-# 7. Agregar known_hosts dentro del Backup Server (SOLO por IP)
+# 7. Generar/actualizar ~/.ssh/config con los alias de Host
+#    (backup, mlopez, fmartinez, ngalego, mlandaco, pfumero) para que los
+#    comandos 'ssh backup', 'ssh mlopez', etc. del README funcionen en
+#    CUALQUIER PC sin configuración manual, no solo en la máquina donde
+#    se armó el proyecto originalmente.
+#
+#    Es idempotente: si el script ya corrió antes, borra el bloque viejo
+#    (delimitado por los marcadores) antes de escribir el nuevo, para no
+#    duplicar entradas en re-ejecuciones ni pisar otras configuraciones
+#    de SSH que el usuario tenga en el mismo archivo.
+log "Configurando ~/.ssh/config (alias de Host para backup/fileserver)..."
+SSH_CONFIG="$HOME/.ssh/config"
+MARKER_START="# >>> VELTRO SSH CONFIG (auto-generado por setup-ssh-config.sh, no editar a mano) >>>"
+MARKER_END="# <<< VELTRO SSH CONFIG <<<"
+
+mkdir -p "$HOME/.ssh"
+touch "$SSH_CONFIG"
+chmod 600 "$SSH_CONFIG"
+
+if grep -qF "$MARKER_START" "$SSH_CONFIG" 2>/dev/null; then
+    awk -v s="$MARKER_START" -v e="$MARKER_END" '
+        index($0, s) { flag=1; next }
+        index($0, e) { flag=0; next }
+        !flag { print }
+    ' "$SSH_CONFIG" > "$SSH_CONFIG.tmp" && mv "$SSH_CONFIG.tmp" "$SSH_CONFIG"
+fi
+
+cat >> "$SSH_CONFIG" << EOF
+$MARKER_START
+Host backup
+    HostName localhost
+    Port 2022
+    User backup
+    IdentityFile ~/.ssh/id_rsa_backup
+    StrictHostKeyChecking no
+    UserKnownHostsFile /dev/null
+
+Host mlopez
+    HostName localhost
+    Port 2322
+    User mlopez
+    IdentityFile ~/.ssh/id_rsa_backup
+    StrictHostKeyChecking no
+    UserKnownHostsFile /dev/null
+
+Host fmartinez
+    HostName localhost
+    Port 2322
+    User fmartinez
+    IdentityFile ~/.ssh/id_rsa_backup
+    StrictHostKeyChecking no
+    UserKnownHostsFile /dev/null
+
+Host ngalego
+    HostName localhost
+    Port 2322
+    User ngalego
+    IdentityFile ~/.ssh/id_rsa_backup
+    StrictHostKeyChecking no
+    UserKnownHostsFile /dev/null
+
+Host mlandaco
+    HostName localhost
+    Port 2322
+    User mlandaco
+    IdentityFile ~/.ssh/id_rsa_backup
+    StrictHostKeyChecking no
+    UserKnownHostsFile /dev/null
+
+Host pfumero
+    HostName localhost
+    Port 2322
+    User pfumero
+    IdentityFile ~/.ssh/id_rsa_backup
+    StrictHostKeyChecking no
+    UserKnownHostsFile /dev/null
+$MARKER_END
+EOF
+
+log "✅ ~/.ssh/config actualizado"
+
+# 8. Agregar known_hosts dentro del Backup Server (SOLO por IP)
 #    NOTA: se quitó 'ssh-keyscan -H fileserver' porque svveltrobackup
 #    (dmz_network) no comparte red Docker con fileserver (lan_network +
 #    VLANs), por lo que el nombre 'fileserver' no resuelve por DNS interno
@@ -121,7 +203,7 @@ docker exec svveltrobackup /bin/bash -c "
 "
 log "✅ known_hosts actualizado"
 
-# 8. Verificación final: probar la conexión SSH real backup -> fileserver
+# 9. Verificación final: probar la conexión SSH real backup -> fileserver
 log "Verificando conexión SSH backup -> fileserver..."
 if docker exec -u backup svveltrobackup ssh -o StrictHostKeyChecking=no -o ConnectTimeout=5 backup@192.168.0.100 "echo OK" 2>/dev/null | grep -q OK; then
     log "✅ Conexión SSH verificada correctamente"
@@ -131,3 +213,7 @@ else
 fi
 
 echo "=== CONFIGURACIÓN COMPLETADA ==="
+echo ""
+echo "Ahora podés usar directamente desde este host:"
+echo "  ssh backup"
+echo "  ssh mlopez / fmartinez / ngalego / mlandaco / pfumero"
