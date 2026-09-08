@@ -19,6 +19,7 @@
 - [🔧 Servicios y Puertos](#-servicios-y-puertos)
 - [⚙️ Comandos Útiles](#️-comandos-útiles)
 - [✅ Verificación de la Infraestructura](#-verificación-de-la-infraestructura)
+- [🔀 Failover de Base de Datos](#-failover-de-base-de-datos)
 - [🔄 Reinicio Completo (borrando datos)](#-reinicio-completo-borrando-datos)
 - [🐛 Solución de Problemas Comunes](#-solución-de-problemas-comunes)
 - [📁 Estructura de Archivos](#-estructura-de-archivos)
@@ -259,6 +260,46 @@ Para otros chequeos manuales de la infraestructura (replicación, HAProxy, WAF, 
 
 ---
 
+## 🔀 Failover de Base de Datos
+
+> ⚠️ El failover **no es automático**. HAProxy detecta la caída del Master y deja de enrutarle tráfico, pero la promoción del Slave a Master es una decisión manual — ver el porqué más abajo.
+
+### Cómo funciona la detección
+
+HAProxy (`sqlproxy`) hace un healthcheck real de MySQL (`option mysql-check`) contra el Master y el Slave cada 5 segundos. Si el Master falla 3 chequeos seguidos (~15s), HAProxy lo marca `DOWN` en su página de stats:
+
+```bash
+http://localhost:8404/stats   # admin / admin
+```
+
+Además, hay un script que cruza ese estado con una verificación directa (bypass de HAProxy) al Master y revisa el retraso de replicación del Slave, para descartar falsos positivos antes de tomar cualquier decisión:
+
+```bash
+./scripts/init/check-db-failover.sh
+```
+
+Termina con código `0` si el Master está sano, `1` si confirma la caída (e imprime los pasos exactos de promoción), o `2` si el resultado es inconsistente y conviene reintentar antes de actuar.
+
+### Por qué la promoción es manual
+
+Automatizar la detección es relativamente simple; automatizar la **promoción** de forma segura no lo es, con esta arquitectura (HAProxy + replicación MySQL nativa):
+
+- **Riesgo de split-brain:** si el Master en realidad sigue vivo (por ejemplo, un corte de red parcial hacia el healthcheck, pero la app todavía puede escribirle por otra vía) y el Slave se promueve igual, quedan **dos nodos aceptando escrituras** al mismo tiempo. Reconciliar esos datos después es mucho más costoso que esperar una confirmación humana.
+- **Retraso de replicación:** promover un Slave con `Seconds_Behind_Master` alto implica perder las últimas transacciones que no llegaron a replicarse. Vale la pena que una persona vea ese número antes de decidir.
+- **El viejo Master no se reincorpora solo:** una vez promovido el Slave, si el Master original vuelve a estar disponible, sigue creyendo que es el Master. Hay que reconstruirlo manualmente como Slave del nuevo Master.
+
+### Procedimiento de promoción (manual)
+
+Si `check-db-failover.sh` confirma la caída (exit code `1`), sigue las instrucciones que imprime el propio script. En resumen:
+
+1. Confirmar una vez más que el Master está caído (no solo un problema de red puntual).
+2. En el Slave: `STOP SLAVE; RESET SLAVE ALL; SET GLOBAL read_only = OFF; SET GLOBAL super_read_only = OFF;`
+3. Editar `config/haproxy/haproxy.cfg`: apuntar el `server master` del listener `mysql_master` a la IP del ex-Slave (`192.168.20.40`).
+4. Aplicar el cambio con `docker-compose restart sqlproxy` (esta imagen de HAProxy no soporta reload en caliente, así que hay un corte breve de conexiones activas).
+5. Cuando el Master original vuelva, reconstruirlo como Slave del nuevo Master siguiendo el mismo procedimiento que `scripts/init/setup_replication_on_slave.sh` (no se reincorpora solo).
+
+---
+
 ## 🔄 Reinicio Completo (borrando datos)
 
 ⚠️ Este proceso elimina **todos los datos** (bases de datos, backups, archivos del fileserver).
@@ -304,6 +345,14 @@ docker-compose up -d svveltrobds
 ```bash
 docker exec svveltrobds mysql -uroot -pSlaveDB_V3ltr0_2025! -e "STOP SLAVE; START SLAVE;"
 ```
+
+### 🔸 El Master aparece como DOWN en HAProxy / sospecha de caída
+
+```bash
+./scripts/init/check-db-failover.sh
+```
+
+Ver [Failover de Base de Datos](#-failover-de-base-de-datos) para el diagnóstico completo y el procedimiento de promoción manual. No promuevas el Slave sin correr primero este script — descarta falsos positivos y muestra el retraso de replicación.
 
 ### 🔸 Error: Puertos en uso
 
@@ -375,6 +424,7 @@ Veltro_infra/
 │       ├── setup_replication_on_slave.sh
 │       ├── setup-ssh-config.sh
 │       ├── verify-backup-chain.sh
+│       ├── check-db-failover.sh
 │       └── grafana-dashboards.sh
 ├── build/
 │   └── web/
@@ -412,6 +462,7 @@ Veltro_infra/
 * ✅ Correr `setup-ssh-config.sh` y el script de dashboards son pasos **obligatorios**, no opcionales
 * ✅ Verificar con `docker-compose ps` que todos los contenedores estén `Up`/`Healthy`
 * ✅ Correr `./scripts/init/verify-backup-chain.sh` después de cualquier recreate de contenedores
+* ⚠️ El failover del Master **no es automático** — HAProxy detecta la caída, pero la promoción del Slave es manual (ver [Failover de Base de Datos](#-failover-de-base-de-datos))
 * ✅ Revisar logs ante fallos: `docker-compose logs --tail 100 <servicio>`
 * ✅ La replicación MySQL se configura automáticamente
 * ✅ El Backup Server accede al File Server vía SSH sin contraseña (por clave)
@@ -420,6 +471,6 @@ Veltro_infra/
 
 ---
 
-## 🏁 VELTRO ENTERPRISE
+## VELTRO
 
 **Infraestructura robusta, escalable y lista para producción 🚀**

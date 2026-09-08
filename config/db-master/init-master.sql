@@ -109,4 +109,9 @@ GRANT PROCESS, REPLICATION CLIENT, SELECT ON *.* TO 'exporter'@'%';
 CREATE USER IF NOT EXISTS 'backup_user'@'%' IDENTIFIED WITH mysql_native_password BY 'B4ckup_V3ltr0_2025!';
 GRANT SELECT, LOCK TABLES, SHOW VIEW, PROCESS, RELOAD, REPLICATION CLIENT ON *.* TO 'backup_user'@'%';
 
+-- Usuario haproxy_check (healthcheck de HAProxy - "option mysql-check")
+-- No necesita privilegios ni contraseña: HAProxy solo lee el paquete de
+-- handshake inicial para saber si el servidor responde, nunca completa el login.
+CREATE USER IF NOT EXISTS 'haproxy_check'@'%';
+
 FLUSH PRIVILEGES;

@@ -60,6 +60,14 @@ FLUSH PRIVILEGES;
 EOF
 log "✓ Usuario exporter creado en Slave"
 
+# 5b. Crear usuario haproxy_check en Slave (healthcheck de HAProxy, no replica desde el Master)
+log "Creando usuario haproxy_check en Slave..."
+mysql -h localhost -uroot -p${MYSQL_ROOT_PASSWORD} <<EOF
+CREATE USER IF NOT EXISTS 'haproxy_check'@'%';
+FLUSH PRIVILEGES;
+EOF
+log "✓ Usuario haproxy_check creado en Slave"
+
 # 6. COPIAR ESTRUCTURA Y DATOS DEL MASTER AL SLAVE
 log "Copiando estructura y datos del Master al Slave..."
 
