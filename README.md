@@ -16,6 +16,7 @@
 
 - [📋 Requisitos Previos](#-requisitos-previos)
 - [🚀 Instalación Completa (desde cero)](#-instalación-completa-desde-cero)
+- [🌐 Aplicación Laravel local](#-aplicación-laravel-local)
 - [🔧 Servicios y Puertos](#-servicios-y-puertos)
 - [⚙️ Comandos Útiles](#️-comandos-útiles)
 - [✅ Verificación de la Infraestructura](#-verificación-de-la-infraestructura)
@@ -49,9 +50,12 @@ Estos pasos son los necesarios **siempre** que se levanta el proyecto por primer
 
 ### 1. Clonar el proyecto
 
+Cloná ambos repositorios como carpetas hermanas (los nombres son importantes):
+
 ```bash
-git clone <url-del-repositorio> Veltro_infra
-cd Veltro_infra
+git clone <url-infra> Veltro-infra
+git clone <url-aplicacion> veltro
+cd Veltro-infra
 ```
 
 ### 2. Crear carpetas necesarias
@@ -59,7 +63,7 @@ cd Veltro_infra
 **PowerShell:**
 ```powershell
 New-Item -ItemType Directory -Force -Path @(
-    "data/db-master","data/db-slave","data/web","data/grafana",
+    "data/db-master","data/db-slave","data/web-storage","data/web-cache","data/grafana",
     "data/prometheus","data/backup","data/fileserver",
     "logs/web","logs/db-master","logs/db-slave","logs/haproxy",
     "logs/backup","logs/waf","logs/monitoring"
@@ -68,35 +72,47 @@ New-Item -ItemType Directory -Force -Path @(
 
 **Bash:**
 ```bash
-mkdir -p data/{db-master,db-slave,web,grafana,prometheus,backup,fileserver}
+mkdir -p data/{db-master,db-slave,web-storage,web-cache,grafana,prometheus,backup,fileserver}
 mkdir -p logs/{web,db-master,db-slave,haproxy,backup,waf,monitoring}
 ```
 
-### 3. Configurar archivo `.env` (opcional)
+### 3. Configurar Laravel local
 
-El archivo `.env` ya contiene configuraciones por defecto. Si querés modificarlas:
+Prepará primero el clon de la aplicación:
 
-```env
-# Contraseñas (cambiar si se desea)
-DB_ROOT_PASSWORD=MasterDB_V3ltr0_2025!
-DB_SLAVE_ROOT_PASSWORD=SlaveDB_V3ltr0_2025!
-DB_APP_PASSWORD=V3ltr0App_2025!
-DB_REPLICATION_PASSWORD=Replicator_V3ltr0_2025!
-GRAFANA_ADMIN_PASSWORD=Gr4f4n4_V3ltr0_2025!
-
-# Puertos (opcional)
-WEB_HTTP_PORT=8181
-DB_MASTER_PORT=3316
-DB_SLAVE_PORT=3307
+```bash
+cd ../veltro
+composer install
+cp .env.example .env
+php artisan key:generate
+bun install
 ```
+
+Antes de compilar, completá `REVERB_APP_ID`, `REVERB_APP_KEY` y `REVERB_APP_SECRET` en `../veltro/.env`. Para el navegador mantené `VITE_REVERB_HOST=localhost`, puerto `8080` y esquema `http`.
+
+```bash
+bun run build
+cd ../Veltro-infra
+```
+
+La infraestructura agrega únicamente los valores propios de Docker:
+
+```bash
+cp .env.local.example .env.local
+chmod 600 .env.local
+```
+
+En PowerShell, usá `Copy-Item .env.local.example .env.local` en lugar de los dos comandos anteriores.
+
+Editá `DB_PASSWORD` en `.env.local` para que coincida con la contraseña de `veltro_app`. Este archivo está ignorado por Git y nunca debe versionarse.
 
 ### 4. Levantar toda la infraestructura
 
 ```bash
-docker-compose up -d
+docker compose up -d --build
 
 # Ver logs (opcional)
-docker-compose logs -f
+docker compose logs -f
 ```
 
 ⏱️ La primera vez puede tomar 2-3 minutos (instalación de paquetes dentro de los contenedores Fedora). Esperá antes de continuar:
@@ -132,9 +148,47 @@ docker exec svveltrobds mysql -uroot -pSlaveDB_V3ltr0_2025! -e "SHOW SLAVE STATU
 ./scripts/init/verify-backup-chain.sh
 ```
 
-`docker-compose ps` debe mostrar todos los contenedores `Up` (o `Healthy` los que tienen healthcheck). `Slave_IO_Running` y `Slave_SQL_Running` deben decir `Yes`. `verify-backup-chain.sh` debe terminar con `0 FALLOS`.
+`docker compose ps` debe mostrar los servicios persistentes `Up` (o `Healthy` los que tienen healthcheck). `svveltroweb-init` debe aparecer como `Exited (0)` en `docker compose ps -a`. `Slave_IO_Running` y `Slave_SQL_Running` deben decir `Yes`. `verify-backup-chain.sh` debe terminar con `0 FALLOS`.
 
 Ver [Verificación de la Infraestructura](#-verificación-de-la-infraestructura) para chequeos más profundos, y [Servicios y Puertos](#-servicios-y-puertos) para saber qué URL/credencial usar en cada caso.
+
+---
+
+## 🌐 Aplicación Laravel local
+
+`svveltroweb` monta `../veltro` en solo lectura. Los únicos directorios escribibles (`storage` y `bootstrap/cache`) viven bajo `data/` en este repositorio. Al ejecutar `docker compose up`, el servicio `svveltroweb-init` prepara esos directorios y aplica las migraciones pendientes sobre la base aislada `veltro_local`.
+
+`veltro_local` es la única base de datos de la aplicación. El Master y el Slave son dos instancias MySQL que contienen el mismo esquema mediante replicación; no son dos bases lógicas diferentes.
+
+El esquema compartible está en `database/veltro-schema.sql`. Incluye las 26 tablas de Laravel, sin datos ni sentencias destructivas, y se importa con `mysql -u root -p < database/veltro-schema.sql`. `database/examples/stored-procedures.sql` contiene procedimientos almacenados de documentación; no se instalan automáticamente.
+
+`svveltroweb-init` termina con estado `Exited (0)` después de inicializar; ese estado es correcto y esperado.
+
+```bash
+# Usuario de prueba local (opcional, idempotente)
+docker compose exec svveltroweb php artisan db:seed --force
+
+# Estado y logs de los procesos Laravel
+docker compose ps svveltroweb svveltroqueue svveltroreverb svveltroscheduler
+docker compose logs -f svveltroweb svveltroqueue svveltroreverb svveltroscheduler
+```
+
+Accesos:
+
+- Aplicación detrás del WAF: http://localhost:8188
+- Apache directo: http://localhost:8181
+- Laravel Reverb: `ws://localhost:8080`
+
+Para cambios frontend, ejecutá `bun run build` dentro de `../veltro`; no hace falta reconstruir la imagen PHP. No levantes el `compose.yaml` de Laravel Sail al mismo tiempo, porque crea otro servidor web y otro MySQL.
+
+Si incorporás esta integración sobre volúmenes MySQL ya existentes, los scripts de primer arranque no vuelven a ejecutarse. Prepará la base una sola vez antes de levantar la aplicación:
+
+```bash
+docker exec svveltrobdm sh -lc 'mysql -uroot -p"$MYSQL_ROOT_PASSWORD" -e "CREATE DATABASE IF NOT EXISTS veltro_local CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci; GRANT ALL PRIVILEGES ON veltro_local.* TO '\''veltro_app'\''@'\''%'\'';"'
+docker exec svveltrobds sh -lc 'mysql -uroot -p"$MYSQL_ROOT_PASSWORD" -e "CREATE DATABASE IF NOT EXISTS veltro_local CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci; GRANT ALL PRIVILEGES ON veltro_local.* TO '\''veltro_app'\''@'\''%'\'';"'
+docker compose restart svveltrobdm
+docker compose up -d
+```
 
 ---
 
@@ -144,6 +198,9 @@ Ver [Verificación de la Infraestructura](#-verificación-de-la-infraestructura)
 | --------------------- | --------------------- | ------ | ------------------------------ |
 | Web App               | svveltroweb           | 8181   | http://localhost:8181          |
 | WAF                   | veltrowaf             | 8188   | http://localhost:8188          |
+| Laravel Queue         | svveltroqueue         | —      | Proceso interno                |
+| Laravel Reverb        | svveltroreverb        | 8080   | ws://localhost:8080            |
+| Laravel Scheduler     | svveltroscheduler     | —      | Proceso interno                |
 | MySQL Master          | svveltrobdm           | 3316   | root / MasterDB_V3ltr0_2025!   |
 | MySQL Slave           | svveltrobds           | 3307   | root / SlaveDB_V3ltr0_2025!    |
 | HAProxy (Escritura)   | sqlproxy              | 6033   | Balanceo                       |
@@ -181,16 +238,7 @@ docker exec -it svveltrobds mysql -uroot -pSlaveDB_V3ltr0_2025!
 ### 🔁 Prueba de replicación
 
 ```bash
-docker exec svveltrobdm mysql -uroot -pMasterDB_V3ltr0_2025! -e "
-CREATE DATABASE IF NOT EXISTS test_replica;
-USE test_replica;
-CREATE TABLE IF NOT EXISTS prueba (id INT, nombre VARCHAR(50));
-INSERT INTO prueba VALUES (1, 'Test replicación');
-"
-
-sleep 2   # En PowerShell: Start-Sleep -Seconds 2
-
-docker exec svveltrobds mysql -uroot -pSlaveDB_V3ltr0_2025! -e "USE test_replica; SELECT * FROM prueba;"
+./scripts/backup/test_replication.sh
 ```
 
 ### 📈 Monitoreo
@@ -288,15 +336,28 @@ Automatizar la detección es relativamente simple; automatizar la **promoción**
 - **Retraso de replicación:** promover un Slave con `Seconds_Behind_Master` alto implica perder las últimas transacciones que no llegaron a replicarse. Vale la pena que una persona vea ese número antes de decidir.
 - **El viejo Master no se reincorpora solo:** una vez promovido el Slave, si el Master original vuelve a estar disponible, sigue creyendo que es el Master. Hay que reconstruirlo manualmente como Slave del nuevo Master.
 
-### Procedimiento de promoción (manual)
+### Simulacro operativo
 
-Si `check-db-failover.sh` confirma la caída (exit code `1`), sigue las instrucciones que imprime el propio script. En resumen:
+El flujo completo está encapsulado en un solo script. Antes de modificar nada,
+valida la replicación, detiene las escrituras y exige una confirmación explícita:
 
-1. Confirmar una vez más que el Master está caído (no solo un problema de red puntual).
-2. En el Slave: `STOP SLAVE; RESET SLAVE ALL; SET GLOBAL read_only = OFF; SET GLOBAL super_read_only = OFF;`
-3. Editar `config/haproxy/haproxy.cfg`: apuntar el `server master` del listener `mysql_master` a la IP del ex-Slave (`192.168.20.40`).
-4. Aplicar el cambio con `docker-compose restart sqlproxy` (esta imagen de HAProxy no soporta reload en caliente, así que hay un corte breve de conexiones activas).
-5. Cuando el Master original vuelva, reconstruirlo como Slave del nuevo Master siguiendo el mismo procedimiento que `scripts/init/setup_replication_on_slave.sh` (no se reincorpora solo).
+```bash
+# Consultar roles, HAProxy y replicación
+./scripts/init/db-failover-drill.sh status
+
+# Apagar el Master y promover el Slave
+./scripts/init/db-failover-drill.sh failover
+
+# Reconstruir el Master y recuperar los roles originales
+./scripts/init/db-failover-drill.sh restore
+```
+
+Cada operación crea sus respaldos dentro de `data/`. Durante el estado de
+failover no ejecutar `docker compose up -d`, porque volvería a iniciar el Master
+anterior; usar `restore` para reincorporarlo de forma segura.
+
+`check-db-failover.sh` continúa disponible como diagnóstico de solo lectura para
+una caída no planificada.
 
 ---
 
@@ -410,7 +471,7 @@ Veltro_infra/
 │   ├── prometheus/
 │   │   └── prometheus.yml
 │   └── waf/
-│       └── default.conf.template
+│       └── proxy_backend.conf.template
 ├── scripts/
 │   ├── backup/
 │   │   ├── setup_backup_server.sh
