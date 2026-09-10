@@ -2,7 +2,7 @@
 server-id=1
 log-bin=mysql-bin
 binlog-format=ROW
-binlog-do-db=veltro_prod
+binlog-do-db=veltro_local
 gtid-mode=ON
 enforce-gtid-consistency=ON
 max_connections=500

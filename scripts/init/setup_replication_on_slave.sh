@@ -20,6 +20,13 @@ until mysql -h localhost -uroot -p${MYSQL_ROOT_PASSWORD} -e "SELECT 1" >/dev/nul
 done
 log "✓ MySQL Slave listo"
 
+# Preparar la única base de la aplicación.
+mysql -h localhost -uroot -p${MYSQL_ROOT_PASSWORD} <<EOF
+CREATE DATABASE IF NOT EXISTS veltro_local CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
+GRANT ALL PRIVILEGES ON veltro_local.* TO 'veltro_app'@'%';
+FLUSH PRIVILEGES;
+EOF
+
 # 2. Verificar si la replicación ya está configurada
 SLAVE_STATUS=$(mysql -h localhost -uroot -p${MYSQL_ROOT_PASSWORD} -e "SHOW SLAVE STATUS\G" 2>/dev/null)
 if echo "$SLAVE_STATUS" | grep -q "Slave_IO_Running: Yes"; then
@@ -71,27 +78,24 @@ log "✓ Usuario haproxy_check creado en Slave"
 # 6. COPIAR ESTRUCTURA Y DATOS DEL MASTER AL SLAVE
 log "Copiando estructura y datos del Master al Slave..."
 
-# Eliminar base de datos existente en Slave si existe
-mysql -h localhost -uroot -p${MYSQL_ROOT_PASSWORD} -e "DROP DATABASE IF EXISTS veltro_prod;" 2>/dev/null
-
-# Crear base de datos vacía
-mysql -h localhost -uroot -p${MYSQL_ROOT_PASSWORD} -e "CREATE DATABASE veltro_prod;" 2>/dev/null
+# Recrear la base de datos en el Slave antes de copiar el estado del Master.
+mysql -h localhost -uroot -p${MYSQL_ROOT_PASSWORD} -e "DROP DATABASE IF EXISTS veltro_local; CREATE DATABASE veltro_local CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;" 2>/dev/null
 
 # Copiar estructura y datos usando pipe
 mysqldump -h svveltrobdm -uroot -pMasterDB_V3ltr0_2025! \
     --single-transaction \
     --set-gtid-purged=OFF \
-    veltro_prod 2>/dev/null | mysql -h localhost -uroot -p${MYSQL_ROOT_PASSWORD} veltro_prod 2>/dev/null
+    veltro_local 2>/dev/null | mysql -h localhost -uroot -p${MYSQL_ROOT_PASSWORD} veltro_local 2>/dev/null
 
 log "✓ Datos copiados exitosamente"
 
 # 7. Verificar que los datos se copiaron
-TABLE_COUNT=$(mysql -h localhost -uroot -p${MYSQL_ROOT_PASSWORD} -e "SELECT COUNT(*) FROM information_schema.tables WHERE table_schema='veltro_prod' AND table_name='equipos';" -N 2>/dev/null)
-if [ "$TABLE_COUNT" -eq "1" ]; then
-    RECORD_COUNT=$(mysql -h localhost -uroot -p${MYSQL_ROOT_PASSWORD} -e "SELECT COUNT(*) FROM veltro_prod.equipos;" -N 2>/dev/null)
-    log "✓ Tablas creadas correctamente. Registros en equipos: $RECORD_COUNT"
+MASTER_TABLE_COUNT=$(mysql -h svveltrobdm -uroot -pMasterDB_V3ltr0_2025! -Nse "SELECT COUNT(*) FROM information_schema.tables WHERE table_schema='veltro_local';" 2>/dev/null)
+SLAVE_TABLE_COUNT=$(mysql -h localhost -uroot -p${MYSQL_ROOT_PASSWORD} -Nse "SELECT COUNT(*) FROM information_schema.tables WHERE table_schema='veltro_local';" 2>/dev/null)
+if [ "$MASTER_TABLE_COUNT" = "$SLAVE_TABLE_COUNT" ]; then
+    log "✓ Esquema copiado correctamente. Tablas: $SLAVE_TABLE_COUNT"
 else
-    log "ERROR: No se pudieron copiar los datos"
+    log "ERROR: El número de tablas no coincide (Master: $MASTER_TABLE_COUNT, Slave: $SLAVE_TABLE_COUNT)"
     exit 1
 fi
 
@@ -130,6 +134,7 @@ IO_RUNNING=$(echo "$SLAVE_STATUS" | grep "Slave_IO_Running:" | awk '{print $2}')
 SQL_RUNNING=$(echo "$SLAVE_STATUS" | grep "Slave_SQL_Running:" | awk '{print $2}')
 
 if [ "$IO_RUNNING" = "Yes" ] && [ "$SQL_RUNNING" = "Yes" ]; then
+    mysql -h localhost -uroot -p${MYSQL_ROOT_PASSWORD} -e "SET PERSIST read_only=ON; SET PERSIST super_read_only=ON;" 2>/dev/null
     log "✅ REPLICACIÓN CONFIGURADA EXITOSAMENTE"
     log "   Slave_IO_Running: $IO_RUNNING"
     log "   Slave_SQL_Running: $SQL_RUNNING"

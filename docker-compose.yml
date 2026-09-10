@@ -1,5 +1,3 @@
-version: '3.8'
-
 services:
   # ==================== DMZ - SERVIDORES ====================
 
@@ -12,14 +10,15 @@ services:
       dmz_network:
         ipv4_address: 192.168.20.5
     ports:
-      - "8188:8080"
-      - "4438:443"
+      - "127.0.0.1:8188:8080"
+      - "127.0.0.1:4438:443"
     volumes:
-      - ./config/waf/default.conf.template:/etc/nginx/templates/default.conf.template:ro
+      - ./config/waf/proxy_backend.conf.template:/etc/nginx/templates/includes/proxy_backend.conf.template:ro
       - ./logs/waf:/var/log/nginx
     environment:
       TZ: America/Montevideo
       BACKEND: http://192.168.20.10:80
+      NGINX_X_FORWARDED_PORT: "8188"
       PROXY: 1
       MODSEC_RULE_ENGINE: On
       PARANOIA: 2
@@ -31,6 +30,7 @@ services:
 
   # Servidor Web - Apache + PHP 8.4
   svveltroweb:
+    image: veltro-web:local
     build:
       context: ./build/web
       dockerfile: Dockerfile
@@ -40,15 +40,127 @@ services:
       dmz_network:
         ipv4_address: 192.168.20.10
     ports:
-      - "8181:80"
+      - "127.0.0.1:8181:80"
+    env_file:
+      - ./.env.local
     volumes:
-      - ./data/web:/var/www/html
+      - ../veltro:/var/www/html:ro
+      - ./data/web-storage:/var/www/html/storage
+      - ./data/web-cache:/var/www/html/bootstrap/cache
       - ./config/apache/veltro.conf:/etc/apache2/sites-available/000-default.conf:ro
       - ./logs/web:/var/log/apache2
     environment:
       TZ: America/Montevideo
       APACHE_RUN_USER: www-data
       APACHE_RUN_GROUP: www-data
+    depends_on:
+      svveltroweb-init:
+        condition: service_completed_successfully
+    restart: unless-stopped
+
+  # Prepara los directorios escribibles y la base de datos antes de iniciar Laravel
+  svveltroweb-init:
+    image: veltro-web:local
+    pull_policy: never
+    container_name: svveltroweb-init
+    hostname: svveltroweb-init
+    working_dir: /var/www/html
+    networks:
+      - dmz_network
+    env_file:
+      - ./.env.local
+    volumes:
+      - ../veltro:/var/www/html:ro
+      - ./data/web-storage:/var/www/html/storage
+      - ./data/web-cache:/var/www/html/bootstrap/cache
+    command:
+      - sh
+      - -c
+      - |
+        set -eu
+        install -d -o www-data -g www-data \
+          storage/app/private \
+          storage/app/public \
+          storage/framework/cache/data \
+          storage/framework/sessions \
+          storage/framework/testing \
+          storage/framework/views \
+          storage/logs \
+          bootstrap/cache
+        chown -R www-data:www-data storage bootstrap/cache
+        runuser -u www-data -- php artisan package:discover --ansi
+        runuser -u www-data -- php artisan migrate --force --ansi
+    depends_on:
+      sqlproxy:
+        condition: service_started
+    restart: "no"
+
+  # Procesador de colas de Laravel
+  svveltroqueue:
+    image: veltro-web:local
+    pull_policy: never
+    container_name: svveltroqueue
+    hostname: svveltroqueue
+    working_dir: /var/www/html
+    user: "33:33"
+    networks:
+      - dmz_network
+    env_file:
+      - ./.env.local
+    volumes:
+      - ../veltro:/var/www/html:ro
+      - ./data/web-storage:/var/www/html/storage
+      - ./data/web-cache:/var/www/html/bootstrap/cache
+    command: ["php", "artisan", "queue:work", "--sleep=3", "--tries=3", "--timeout=60"]
+    depends_on:
+      svveltroweb:
+        condition: service_started
+    restart: unless-stopped
+
+  # Servidor WebSocket de Laravel Reverb
+  svveltroreverb:
+    image: veltro-web:local
+    pull_policy: never
+    container_name: svveltroreverb
+    hostname: svveltroreverb
+    working_dir: /var/www/html
+    user: "33:33"
+    networks:
+      - dmz_network
+    ports:
+      - "127.0.0.1:8080:8080"
+    env_file:
+      - ./.env.local
+    volumes:
+      - ../veltro:/var/www/html:ro
+      - ./data/web-storage:/var/www/html/storage
+      - ./data/web-cache:/var/www/html/bootstrap/cache
+    command: ["php", "artisan", "reverb:start", "--host=0.0.0.0", "--port=8080"]
+    depends_on:
+      svveltroweb:
+        condition: service_started
+    restart: unless-stopped
+
+  # Ejecutor del scheduler de Laravel
+  svveltroscheduler:
+    image: veltro-web:local
+    pull_policy: never
+    container_name: svveltroscheduler
+    hostname: svveltroscheduler
+    working_dir: /var/www/html
+    user: "33:33"
+    networks:
+      - dmz_network
+    env_file:
+      - ./.env.local
+    volumes:
+      - ../veltro:/var/www/html:ro
+      - ./data/web-storage:/var/www/html/storage
+      - ./data/web-cache:/var/www/html/bootstrap/cache
+    command: ["php", "artisan", "schedule:work"]
+    depends_on:
+      svveltroweb:
+        condition: service_started
     restart: unless-stopped
 
   # Base de Datos Master - MySQL 8.0 (Escritura)
@@ -64,7 +176,7 @@ services:
     environment:
       TZ: America/Montevideo
       MYSQL_ROOT_PASSWORD: MasterDB_V3ltr0_2025!
-      MYSQL_DATABASE: veltro_prod
+      MYSQL_DATABASE: veltro_local
       MYSQL_USER: veltro_app
       MYSQL_PASSWORD: V3ltr0App_2025!
     volumes:
@@ -102,7 +214,7 @@ services:
     environment:
       TZ: America/Montevideo
       MYSQL_ROOT_PASSWORD: SlaveDB_V3ltr0_2025!
-      MYSQL_DATABASE: veltro_prod
+      MYSQL_DATABASE: veltro_local
       MYSQL_USER: veltro_app
       MYSQL_PASSWORD: V3ltr0App_2025!
       MYSQL_REPLICATION_PASSWORD: Replicator_V3ltr0_2025!
@@ -123,7 +235,7 @@ services:
     restart: unless-stopped
     # Healthcheck más permisivo para dar tiempo a que se configure la replicación
     healthcheck:
-      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-uroot", "-pSlaveDB_V3ltr0_2025!"]
+      test: ["CMD-SHELL", "status=$$(mysql -uroot -pSlaveDB_V3ltr0_2025! -e 'SHOW REPLICA STATUS\\G' 2>/dev/null) && echo \"$$status\" | grep -q 'Replica_IO_Running: Yes' && echo \"$$status\" | grep -q 'Replica_SQL_Running: Yes'"]
       interval: 30s
       timeout: 10s
       retries: 10
@@ -148,7 +260,7 @@ services:
       svveltrobdm:
         condition: service_healthy
       svveltrobds:
-        condition: service_started  # Cambiado de healthy a started
+        condition: service_healthy
     restart: unless-stopped
 
    # Servidor de Backup
@@ -159,6 +271,7 @@ services:
     networks:
       dmz_network:
         ipv4_address: 192.168.20.30
+      lan_network:
     ports:
       - "2022:22"
       - "9100:9100"
